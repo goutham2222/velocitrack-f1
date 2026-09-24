@@ -12,6 +12,8 @@ ENV/
 out/
 build/
 dist/
+*.tsbuildinfo
+
 
 # Python cache & artifacts
 __pycache__/
