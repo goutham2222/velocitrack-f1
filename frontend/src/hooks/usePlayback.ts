@@ -11,7 +11,7 @@ import {
 
 interface UsePlaybackOptions {
   payload: ReplayPayload | null;
-  initialDriver?: string;
+  initialDriver?: string | null;
 }
 
 // Catmull-Rom 1D spline interpolation
@@ -27,7 +27,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1);
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [selectedDriverCode, setSelectedDriverCode] = useState<string>(initialDriver);
+  const [selectedDriverCode, setSelectedDriverCode] = useState<string | null>(initialDriver ?? null);
 
   const duration = payload?.metadata.duration_seconds || 100;
   const timeStep = payload?.metadata.time_step || 0.1;
@@ -44,12 +44,12 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
   const playbackSpeedRef = useRef<PlaybackSpeed>(playbackSpeed);
   playbackSpeedRef.current = playbackSpeed;
 
-  // Sync selected driver if default not in payload
+  // Sync selected driver if selected code not in payload
   useEffect(() => {
-    if (payload && payload.drivers) {
+    if (payload && payload.drivers && selectedDriverCode) {
       const codes = Object.keys(payload.drivers);
       if (codes.length > 0 && !codes.includes(selectedDriverCode)) {
-        setSelectedDriverCode(codes[0]);
+        setSelectedDriverCode(null);
       }
     }
   }, [payload, selectedDriverCode]);
@@ -105,6 +105,17 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       }
       return !prev;
     });
+  }, [duration, seekTo]);
+
+  const pause = useCallback(() => {
+    setIsPlaying(false);
+  }, []);
+
+  const play = useCallback(() => {
+    if (currentTimeRef.current >= duration) {
+      seekTo(0);
+    }
+    setIsPlaying(true);
   }, [duration, seekTo]);
 
   const stepForward = useCallback(
@@ -336,13 +347,17 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
   }, [payload, currentTime]);
 
   const focusedDriver =
-    interpolatedState?.drivers[selectedDriverCode] ||
-    (interpolatedState?.leaderboard[0] ? interpolatedState.drivers[interpolatedState.leaderboard[0].code] : null);
+    selectedDriverCode && interpolatedState?.drivers[selectedDriverCode]
+      ? interpolatedState.drivers[selectedDriverCode]
+      : null;
 
   return {
     currentTime,
     duration,
     isPlaying,
+    setIsPlaying,
+    play,
+    pause,
     playbackSpeed,
     selectedDriverCode,
     setSelectedDriverCode,

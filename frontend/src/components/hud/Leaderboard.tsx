@@ -6,7 +6,7 @@ import { ChevronDown, ChevronUp, Radio } from "lucide-react";
 
 interface LeaderboardProps {
   entries: LeaderboardEntry[];
-  selectedDriverCode: string;
+  selectedDriverCode: string | null;
   onSelectDriver: (code: string) => void;
 }
 
@@ -54,7 +54,7 @@ export function Leaderboard({
             return (
               <div
                 key={entry.code}
-                onClick={() => onSelectDriver(entry.code)}
+                onClick={() => onSelectDriver(isSelected ? "" : entry.code)}
                 className={`flex items-center justify-between px-3 py-1.5 cursor-pointer transition-colors duration-100 ${
                   isSelected
                     ? "bg-white/10 border-l-4 border-l-white"

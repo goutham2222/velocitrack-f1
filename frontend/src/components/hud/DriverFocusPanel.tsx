@@ -2,18 +2,20 @@
 
 import React from "react";
 import { InterpolatedDriverState, SpeedUnit } from "@/types/telemetry";
-import { Zap, Gauge, Flame, ShieldAlert } from "lucide-react";
+import { Zap, Gauge, Flame, ShieldAlert, X } from "lucide-react";
 
 interface DriverFocusPanelProps {
   driver: InterpolatedDriverState | null;
   speedUnit: SpeedUnit;
   onToggleUnit: () => void;
+  onClose?: () => void;
 }
 
 export function DriverFocusPanel({
   driver,
   speedUnit,
   onToggleUnit,
+  onClose,
 }: DriverFocusPanelProps) {
   if (!driver) return null;
 
@@ -53,17 +55,31 @@ export function DriverFocusPanel({
           </div>
         </div>
 
-        {/* DRS Status Pill */}
-        <div
-          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase border transition-all ${
-            isDrsActive
-              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500 shadow-neon"
-              : isDrsAvailable
-              ? "bg-amber-500/20 text-amber-300 border-amber-500"
-              : "bg-slate-800/40 text-slate-500 border-slate-700"
-          }`}
-        >
-          {isDrsActive ? "DRS OPEN" : isDrsAvailable ? "DRS AVAIL" : "DRS OFF"}
+        <div className="flex items-center gap-2">
+          {/* DRS Status Pill */}
+          <div
+            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase border transition-all ${
+              isDrsActive
+                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500 shadow-neon"
+                : isDrsAvailable
+                ? "bg-amber-500/20 text-amber-300 border-amber-500"
+                : "bg-slate-800/40 text-slate-500 border-slate-700"
+            }`}
+          >
+            {isDrsActive ? "DRS OPEN" : isDrsAvailable ? "DRS AVAIL" : "DRS OFF"}
+          </div>
+
+          {/* Close / Deselect Button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white border border-white/10 transition shadow-sm"
+              title="Exit Driver View (Esc)"
+              aria-label="Exit Driver View"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 

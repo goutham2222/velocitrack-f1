@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -21,7 +21,10 @@ interface ViewportContainerProps {
   cameraMode: CameraMode;
   viewportMode: ViewportMode;
   onSelectDriver: (code: string) => void;
+  onDeselectDriver?: () => void;
   onToggleViewportMode: (mode: ViewportMode) => void;
+  resetTrigger?: number;
+  isInteractionDisabled?: boolean;
 }
 
 export function ViewportContainer({
@@ -31,7 +34,10 @@ export function ViewportContainer({
   cameraMode,
   viewportMode,
   onSelectDriver,
+  onDeselectDriver,
   onToggleViewportMode,
+  resetTrigger = 0,
+  isInteractionDisabled = false,
 }: ViewportContainerProps) {
   const [hasWebGL, setHasWebGL] = useState<boolean>(true);
 
@@ -48,6 +54,23 @@ export function ViewportContainer({
     }
   }, []);
 
+  // Compute circuit geometrical center for camera positioning
+  const circuitCenter: [number, number, number] = useMemo(() => {
+    if (!circuit || !circuit.centerline || circuit.centerline.length === 0) {
+      return [0, 0, 0];
+    }
+    let sumX = 0;
+    let sumY = 0;
+    let sumZ = 0;
+    const count = circuit.centerline.length;
+    for (const pt of circuit.centerline) {
+      sumX += pt[0];
+      sumZ += pt[1]; // In Three.js: X = X, Y = Elevation(Z), Z = Y
+      sumY += pt[2] || 0;
+    }
+    return [sumX / count, sumY / count, sumZ / count];
+  }, [circuit]);
+
   // If user selected 2D mode or device lacks WebGL
   if (viewportMode === "2d" || !hasWebGL) {
     return (
@@ -56,6 +79,8 @@ export function ViewportContainer({
         drivers={drivers}
         focusedDriver={focusedDriver}
         onSelectDriver={onSelectDriver}
+        onDeselectDriver={onDeselectDriver}
+        isInteractionDisabled={isInteractionDisabled}
       />
     );
   }
@@ -63,13 +88,27 @@ export function ViewportContainer({
   const driverList = Object.values(drivers);
 
   return (
-    <div className="relative w-full h-full bg-titanium-950 overflow-hidden">
+    <div
+      className={`relative w-full h-full bg-titanium-950 overflow-hidden ${
+        isInteractionDisabled ? "pointer-events-none select-none" : ""
+      }`}
+    >
       <Canvas
-        camera={{ position: [0, 240, 220], fov: 48, near: 0.5, far: 2500 }}
+        camera={{
+          position: [circuitCenter[0], 240, circuitCenter[2] + 220],
+          fov: 48,
+          near: 0.5,
+          far: 2500,
+        }}
         gl={{
           antialias: true,
           alpha: false,
           powerPreference: "high-performance",
+        }}
+        onPointerMissed={(e) => {
+          if (e.type === "click" && onDeselectDriver) {
+            onDeselectDriver();
+          }
         }}
         onCreated={({ gl, scene }) => {
           gl.setClearColor(new THREE.Color("#0b0e14"));
@@ -90,7 +129,7 @@ export function ViewportContainer({
         {/* Ambient Ground Grid */}
         <gridHelper
           args={[3000, 60, "#1e293b", "#0f172a"]}
-          position={[0, -0.2, 0]}
+          position={[circuitCenter[0], -0.2, circuitCenter[2]]}
         />
 
         {/* 3D Track & Environment */}
@@ -106,10 +145,17 @@ export function ViewportContainer({
           />
         ))}
 
-        {/* Camera Control Rig */}
-        <CameraRig mode={cameraMode} focusedDriver={focusedDriver} />
+        {/* Camera Control Rig with Smooth Lerp Overview Transition */}
+        <CameraRig
+          mode={cameraMode}
+          focusedDriver={focusedDriver}
+          origin={circuitCenter}
+          defaultHeight={240}
+          defaultDistance={220}
+          resetTrigger={resetTrigger}
+          disabled={isInteractionDisabled}
+        />
       </Canvas>
     </div>
   );
 }
-

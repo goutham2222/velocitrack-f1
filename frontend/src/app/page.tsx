@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   ReplayPayload,
   CameraMode,
@@ -23,22 +23,25 @@ import {
   SlidersHorizontal,
   X,
   Radio,
+  CameraOff,
 } from "lucide-react";
 
 export default function ReplayDashboard() {
   const [payload, setPayload] = useState<ReplayPayload | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPickerOpen, setIsPickerOpen] = useState<boolean>(false);
+  const [resetTrigger, setResetTrigger] = useState<number>(0);
+  const wasPlayingRef = useRef<boolean>(false);
 
   // Viewport & HUD state
   const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [viewportMode, setViewportMode] = useState<ViewportMode>("3d");
   const [speedUnit, setSpeedUnit] = useState<SpeedUnit>("kmh");
 
-  // Playback engine
+  // Playback engine (defaults to global orbit view)
   const playback = usePlayback({
     payload,
-    initialDriver: "VER",
+    initialDriver: null,
   });
 
   // Load demo on initial mount for instant zero-wait startup
@@ -55,6 +58,60 @@ export default function ReplayDashboard() {
       });
   }, []);
 
+  const handleResetCamera = useCallback(() => {
+    playback.setSelectedDriverCode(null);
+    setCameraMode("orbit");
+    setResetTrigger((prev) => prev + 1);
+  }, [playback]);
+
+  const handleSelectDriver = useCallback(
+    (code: string) => {
+      if (!code || code === playback.selectedDriverCode) {
+        handleResetCamera();
+        return;
+      }
+      playback.setSelectedDriverCode(code);
+      if (viewportMode === "3d") {
+        setCameraMode("chase");
+      }
+    },
+    [playback, viewportMode, handleResetCamera]
+  );
+
+  const handleOpenPicker = useCallback(() => {
+    wasPlayingRef.current = playback.isPlaying;
+    playback.pause();
+    setIsPickerOpen(true);
+  }, [playback]);
+
+  const handleClosePicker = useCallback(() => {
+    setIsPickerOpen(false);
+    if (wasPlayingRef.current) {
+      playback.play();
+    }
+  }, [playback]);
+
+  // Global Escape key listener: closes modal if open, otherwise exits driver chase view
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isPickerOpen) {
+          handleClosePicker();
+        } else if (playback.selectedDriverCode || cameraMode === "chase") {
+          handleResetCamera();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isPickerOpen,
+    playback.selectedDriverCode,
+    cameraMode,
+    handleClosePicker,
+    handleResetCamera,
+  ]);
+
   const handleLoadDemo = useCallback(() => {
     setIsLoading(true);
     fetchDemoReplay(10, 2)
@@ -62,13 +119,13 @@ export default function ReplayDashboard() {
         setPayload(data);
         playback.seekTo(0);
         setIsLoading(false);
-        setIsPickerOpen(false);
+        handleClosePicker();
       })
       .catch((err) => {
         console.error("Failed to reload demo:", err);
         setIsLoading(false);
       });
-  }, [playback]);
+  }, [playback, handleClosePicker]);
 
   const handleLoadSession = useCallback(
     (
@@ -84,14 +141,14 @@ export default function ReplayDashboard() {
           setPayload(data);
           playback.seekTo(0);
           setIsLoading(false);
-          setIsPickerOpen(false);
+          handleClosePicker();
         })
         .catch((err) => {
           console.error("Failed to fetch session replay:", err);
           setIsLoading(false);
         });
     },
-    [playback]
+    [playback, handleClosePicker]
   );
 
   return (
@@ -161,7 +218,7 @@ export default function ReplayDashboard() {
           />
 
           <button
-            onClick={() => setIsPickerOpen(!isPickerOpen)}
+            onClick={handleOpenPicker}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600/90 hover:bg-red-500 text-white text-xs font-mono font-bold tracking-wider transition shadow-md"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -181,18 +238,33 @@ export default function ReplayDashboard() {
             focusedDriver={playback.focusedDriver}
             cameraMode={cameraMode}
             viewportMode={viewportMode}
-            onSelectDriver={(code) => {
-              playback.setSelectedDriverCode(code);
-              if (viewportMode === "3d") {
-                setCameraMode("chase");
-              }
-            }}
+            onSelectDriver={handleSelectDriver}
+            onDeselectDriver={handleResetCamera}
             onToggleViewportMode={setViewportMode}
+            resetTrigger={resetTrigger}
+            isInteractionDisabled={isPickerOpen}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center flex-col gap-3 text-slate-400 font-mono text-sm">
             <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
             <span>INITIALIZING HIGH-PRECISION F1 TELEMETRY...</span>
+          </div>
+        )}
+
+        {/* Top Floating Viewport HUD: Exit Driver View Floating Pill */}
+        {payload && (playback.selectedDriverCode || cameraMode === "chase") && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-150">
+            <button
+              onClick={handleResetCamera}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-titanium-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-white/20 shadow-2xl backdrop-blur-md text-xs font-mono font-bold tracking-wide transition group"
+              title="Exit Driver View and return to Global Overview (Esc)"
+            >
+              <CameraOff className="w-3.5 h-3.5 text-red-400 group-hover:text-red-300 transition" />
+              <span>Exit Driver View</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-black/40 border border-white/10 text-[10px] text-slate-400 font-mono">
+                Esc
+              </kbd>
+            </button>
           </div>
         )}
 
@@ -202,12 +274,7 @@ export default function ReplayDashboard() {
             <Leaderboard
               entries={playback.leaderboard}
               selectedDriverCode={playback.selectedDriverCode}
-              onSelectDriver={(code) => {
-                playback.setSelectedDriverCode(code);
-                if (viewportMode === "3d") {
-                  setCameraMode("chase");
-                }
-              }}
+              onSelectDriver={handleSelectDriver}
             />
           </div>
         )}
@@ -221,6 +288,7 @@ export default function ReplayDashboard() {
               onToggleUnit={() =>
                 setSpeedUnit((prev) => (prev === "kmh" ? "mph" : "kmh"))
               }
+              onClose={handleResetCamera}
             />
           </div>
         )}
@@ -248,11 +316,17 @@ export default function ReplayDashboard() {
       {/* Session Selector Modal / Drawer */}
       {/* ------------------------------------------------------------------------- */}
       {isPickerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-2xl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          {/* Dedicated Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
+            onClick={handleClosePicker}
+          />
+          <div className="relative w-full max-w-2xl z-10 animate-in fade-in zoom-in-95 duration-150">
             <button
-              onClick={() => setIsPickerOpen(false)}
+              onClick={handleClosePicker}
               className="absolute -top-3 -right-3 z-10 p-1.5 rounded-full bg-slate-800 text-slate-300 hover:text-white border border-white/20 shadow-xl transition"
+              title="Close (Esc)"
             >
               <X className="w-4 h-4" />
             </button>

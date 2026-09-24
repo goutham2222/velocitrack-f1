@@ -9,6 +9,8 @@ interface Track2DProps {
   drivers: Record<string, InterpolatedDriverState>;
   focusedDriver: InterpolatedDriverState | null;
   onSelectDriver: (code: string) => void;
+  onDeselectDriver?: () => void;
+  isInteractionDisabled?: boolean;
 }
 
 export function Track2D({
@@ -16,12 +18,15 @@ export function Track2D({
   drivers,
   focusedDriver,
   onSelectDriver,
+  onDeselectDriver,
+  isInteractionDisabled = false,
 }: Track2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [scale, setScale] = useState<number>(0.9);
   const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const isDraggingRef = useRef<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const clickStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Compute track bounds for auto-centering
   const bounds = React.useMemo(() => {
@@ -55,26 +60,72 @@ export function Track2D({
 
   // Handle Zoom & Pan
   const handleWheel = (e: React.WheelEvent) => {
+    if (isInteractionDisabled) return;
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.15 : 0.88;
     setScale((prev) => Math.max(0.3, Math.min(6.0, prev * factor)));
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (isInteractionDisabled) return;
     isDraggingRef.current = true;
     dragStartRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
+    clickStartRef.current = { x: e.clientX, y: e.clientY };
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDraggingRef.current) return;
+    if (isInteractionDisabled || !isDraggingRef.current) return;
     setOffset({
       x: e.clientX - dragStartRef.current.x,
       y: e.clientY - dragStartRef.current.y,
     });
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (isInteractionDisabled) {
+      isDraggingRef.current = false;
+      return;
+    }
+    const wasDragging = isDraggingRef.current;
     isDraggingRef.current = false;
+
+    // Check if stationary click (< 6px movement)
+    const moveDist = Math.hypot(
+      e.clientX - clickStartRef.current.x,
+      e.clientY - clickStartRef.current.y
+    );
+    if (wasDragging && moveDist < 6) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const fitScale =
+        Math.min(width / bounds.width, height / bounds.height) * 0.75 * scale;
+
+      // Find if clicked on any driver
+      let clickedDriverCode: string | null = null;
+      const driverList = Object.values(drivers);
+      for (const drv of driverList) {
+        const screenX =
+          width / 2 + offset.x + (drv.x - bounds.centerX) * fitScale;
+        const screenY =
+          height / 2 + offset.y - (drv.y - bounds.centerY) * fitScale;
+        const dist = Math.hypot(clickX - screenX, clickY - screenY);
+        if (dist < 20) {
+          clickedDriverCode = drv.code;
+          break;
+        }
+      }
+
+      if (clickedDriverCode) {
+        onSelectDriver(clickedDriverCode);
+      } else if (onDeselectDriver) {
+        onDeselectDriver();
+      }
+    }
   };
 
   const resetView = useCallback(() => {
@@ -236,7 +287,11 @@ export function Track2D({
   }, [circuit, drivers, focusedDriver, scale, offset, bounds]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-titanium-950">
+    <div
+      className={`relative w-full h-full overflow-hidden bg-titanium-950 ${
+        isInteractionDisabled ? "pointer-events-none select-none" : ""
+      }`}
+    >
       <canvas
         ref={canvasRef}
         className="w-full h-full cursor-grab active:cursor-grabbing"
