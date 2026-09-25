@@ -9,9 +9,15 @@ interface DriverMarker3DProps {
   driver: InterpolatedDriverState;
   isFocused: boolean;
   onSelect: (code: string) => void;
+  showLabels?: boolean;
 }
 
-export function DriverMarker3D({ driver, isFocused, onSelect }: DriverMarker3DProps) {
+export function DriverMarker3D({
+  driver,
+  isFocused,
+  onSelect,
+  showLabels = true,
+}: DriverMarker3DProps) {
   const groupRef = useRef<THREE.Group>(null);
 
   // Position in Three.js coordinates: [x, z + offset, y]
@@ -60,40 +66,42 @@ export function DriverMarker3D({ driver, isFocused, onSelect }: DriverMarker3DPr
       </mesh>
 
       {/* Floating Acronym Tag */}
-      <Html
-        position={[0, 4.5, 0]}
-        center
-        distanceFactor={100}
-        zIndexRange={[90, 0]}
-      >
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect(driver.code);
-          }}
-          className={`cursor-pointer px-2 py-0.5 rounded text-[11px] font-mono font-bold tracking-wider transition-all duration-150 flex items-center gap-1.5 shadow-xl select-none ${
-            isFocused
-              ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-black/80 font-black"
-              : "hover:scale-105 opacity-90 hover:opacity-100"
-          }`}
-          style={{
-            backgroundColor: "rgba(11, 14, 20, 0.9)",
-            border: `1.5px solid ${driver.teamColor}`,
-            color: "#FFFFFF",
-          }}
+      {showLabels && (
+        <Html
+          position={[0, 4.5, 0]}
+          center
+          distanceFactor={100}
+          zIndexRange={[90, 0]}
         >
-          <span
-            className="w-2 h-2 rounded-full inline-block"
-            style={{ backgroundColor: driver.teamColor }}
-          />
-          <span>{driver.code}</span>
-          {isFocused && (
-            <span className="text-[9px] text-slate-300 font-normal border-l border-white/20 pl-1">
-              {Math.round(driver.speed)} km/h
-            </span>
-          )}
-        </div>
-      </Html>
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(driver.code);
+            }}
+            className={`cursor-pointer px-2 py-0.5 rounded text-[11px] font-mono font-bold tracking-wider transition-all duration-150 flex items-center gap-1.5 shadow-xl select-none ${
+              isFocused
+                ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-black/80 font-black"
+                : "hover:scale-105 opacity-90 hover:opacity-100"
+            }`}
+            style={{
+              backgroundColor: "rgba(11, 14, 20, 0.9)",
+              border: `1.5px solid ${driver.teamColor}`,
+              color: "#FFFFFF",
+            }}
+          >
+            <span
+              className="w-2 h-2 rounded-full inline-block"
+              style={{ backgroundColor: driver.teamColor }}
+            />
+            <span>{driver.code}</span>
+            {isFocused && (
+              <span className="text-[9px] text-slate-300 font-normal border-l border-white/20 pl-1">
+                {Math.round(driver.speed)} km/h
+              </span>
+            )}
+          </div>
+        </Html>
+      )}
     </group>
   );
 }

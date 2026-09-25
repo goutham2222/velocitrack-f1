@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   ReplayPayload,
   CameraMode,
@@ -23,7 +23,6 @@ import {
   SlidersHorizontal,
   X,
   Radio,
-  CameraOff,
 } from "lucide-react";
 
 export default function ReplayDashboard() {
@@ -37,12 +36,24 @@ export default function ReplayDashboard() {
   const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [viewportMode, setViewportMode] = useState<ViewportMode>("3d");
   const [speedUnit, setSpeedUnit] = useState<SpeedUnit>("kmh");
+  const [showDriverLabels, setShowDriverLabels] = useState<boolean>(true);
 
   // Playback engine (defaults to global orbit view)
   const playback = usePlayback({
     payload,
     initialDriver: null,
   });
+
+  // Calculate current lap milestone dynamically from playback progress
+  const currentLap = useMemo(() => {
+    if (!payload) return 1;
+    const { lap_start, lap_end, total_laps } = payload.metadata;
+    const progress =
+      playback.duration > 0 ? playback.currentTime / playback.duration : 0;
+    const calculated =
+      lap_start + Math.floor(progress * Math.max(1, lap_end - lap_start + 1));
+    return Math.min(total_laps, Math.max(lap_start, calculated));
+  }, [payload, playback.currentTime, playback.duration]);
 
   // Load demo on initial mount for instant zero-wait startup
   useEffect(() => {
@@ -157,8 +168,8 @@ export default function ReplayDashboard() {
       {/* Top Broadcast Navigation Bar */}
       {/* ------------------------------------------------------------------------- */}
       <header className="relative z-30 w-full h-14 bg-titanium-950/80 backdrop-blur-md border-b border-white/10 px-4 flex items-center justify-between">
-        {/* Left: Branding & Event Meta */}
-        <div className="flex items-center gap-4">
+        {/* Left: Branding & Status Indicator */}
+        <div className="flex items-center gap-3 flex-shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center font-mono font-black text-white text-sm shadow-neon-red">
               V
@@ -172,58 +183,54 @@ export default function ReplayDashboard() {
                   F1
                 </span>
               </div>
-              <div className="text-[9px] font-mono text-slate-400 tracking-wider">
-                BROADCAST TELEMETRY ENGINE
+              <div className="text-[9px] font-mono text-slate-400 tracking-wider flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>LIVE TELEMETRY</span>
               </div>
             </div>
           </div>
+        </div>
 
-          <div className="h-5 w-px bg-white/10 hidden md:block" />
-
-          {/* Current Session Badge */}
-          {payload && (
-            <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-titanium-900/80 border border-white/5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-mono text-xs font-bold text-slate-200">
+        {/* Center: Active Session Selector Pill (Horizontally Centered) */}
+        {payload && (
+          <div className="hidden md:flex items-center absolute left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-titanium-900/90 border border-white/10 shadow-lg backdrop-blur-md">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+              <span className="font-mono text-xs font-bold text-slate-100 tracking-wide">
                 {payload.metadata.year} {payload.metadata.event_name}
               </span>
               <span className="text-slate-500 font-mono text-xs">&bull;</span>
-              <span className="font-mono text-xs text-red-400 font-semibold">
-                {payload.metadata.session_name}
+              <span className="font-mono text-xs text-red-400 font-semibold whitespace-nowrap">
+                Lap {currentLap} / {payload.metadata.total_laps}
               </span>
-              <span className="text-slate-500 font-mono text-xs">&bull;</span>
-              <span className="font-mono text-[11px] text-slate-400">
-                Laps {payload.metadata.lap_start}–{payload.metadata.lap_end}
-              </span>
+              <button
+                onClick={handleOpenPicker}
+                className="ml-1 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600/90 hover:bg-red-500 text-white text-[11px] font-mono font-bold tracking-wider transition shadow-sm"
+                title="Change Grand Prix Session"
+              >
+                <SlidersHorizontal className="w-3 h-3" />
+                <span>CHANGE SESSION</span>
+              </button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Center: Live Weather & Race Control */}
-        <div className="hidden lg:flex items-center">
-          <WeatherWidget weather={playback.currentWeather} />
-        </div>
-
-        {/* Right: Viewport Toggles & Session Modal Button */}
-        <div className="flex items-center gap-2.5">
+        {/* Right: Viewport Toggles, Labels, Units & Reset Cluster */}
+        <div className="flex items-center gap-2 flex-shrink-0">
           <ViewModeSelector
             viewportMode={viewportMode}
             cameraMode={cameraMode}
             speedUnit={speedUnit}
+            showDriverLabels={showDriverLabels}
+            isDriverFocused={Boolean(playback.selectedDriverCode || cameraMode === "chase")}
             onToggleViewportMode={setViewportMode}
             onToggleCameraMode={setCameraMode}
             onToggleSpeedUnit={() =>
               setSpeedUnit((prev) => (prev === "kmh" ? "mph" : "kmh"))
             }
+            onToggleDriverLabels={() => setShowDriverLabels((prev) => !prev)}
+            onResetCamera={handleResetCamera}
           />
-
-          <button
-            onClick={handleOpenPicker}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600/90 hover:bg-red-500 text-white text-xs font-mono font-bold tracking-wider transition shadow-md"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">SELECT SESSION</span>
-          </button>
         </div>
       </header>
 
@@ -243,28 +250,12 @@ export default function ReplayDashboard() {
             onToggleViewportMode={setViewportMode}
             resetTrigger={resetTrigger}
             isInteractionDisabled={isPickerOpen}
+            showDriverLabels={showDriverLabels}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center flex-col gap-3 text-slate-400 font-mono text-sm">
             <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
             <span>INITIALIZING HIGH-PRECISION F1 TELEMETRY...</span>
-          </div>
-        )}
-
-        {/* Top Floating Viewport HUD: Exit Driver View Floating Pill */}
-        {payload && (playback.selectedDriverCode || cameraMode === "chase") && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-150">
-            <button
-              onClick={handleResetCamera}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-titanium-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-white/20 shadow-2xl backdrop-blur-md text-xs font-mono font-bold tracking-wide transition group"
-              title="Exit Driver View and return to Global Overview (Esc)"
-            >
-              <CameraOff className="w-3.5 h-3.5 text-red-400 group-hover:text-red-300 transition" />
-              <span>Exit Driver View</span>
-              <kbd className="px-1.5 py-0.5 rounded bg-black/40 border border-white/10 text-[10px] text-slate-400 font-mono">
-                Esc
-              </kbd>
-            </button>
           </div>
         )}
 
@@ -290,6 +281,13 @@ export default function ReplayDashboard() {
               }
               onClose={handleResetCamera}
             />
+          </div>
+        )}
+
+        {/* Bottom-Right Floating Overlay: Weather & Race Conditions */}
+        {payload && (
+          <div className="absolute bottom-24 right-4 z-20 pointer-events-auto hidden sm:block animate-in fade-in duration-200">
+            <WeatherWidget weather={playback.currentWeather} />
           </div>
         )}
 

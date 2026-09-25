@@ -11,6 +11,7 @@ interface Track2DProps {
   onSelectDriver: (code: string) => void;
   onDeselectDriver?: () => void;
   isInteractionDisabled?: boolean;
+  showDriverLabels?: boolean;
 }
 
 export function Track2D({
@@ -20,6 +21,7 @@ export function Track2D({
   onSelectDriver,
   onDeselectDriver,
   isInteractionDisabled = false,
+  showDriverLabels = true,
 }: Track2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [scale, setScale] = useState<number>(0.9);
@@ -244,38 +246,40 @@ export function Track2D({
         ctx.fill();
 
         // Driver Label (Tag)
-        ctx.save();
-        ctx.scale(1 / fitScale, -1 / fitScale);
-        const screenX = drv.x * fitScale;
-        const screenY = -drv.y * fitScale;
+        if (showDriverLabels) {
+          ctx.save();
+          ctx.scale(1 / fitScale, -1 / fitScale);
+          const screenX = drv.x * fitScale;
+          const screenY = -drv.y * fitScale;
 
-        // Tag Background
-        const tagText = drv.code;
-        ctx.font = isFocused ? "bold 11px monospace" : "10px monospace";
-        const textWidth = ctx.measureText(tagText).width;
-        const padX = 4;
-        const padY = 2;
+          // Tag Background
+          const tagText = drv.code;
+          ctx.font = isFocused ? "bold 11px monospace" : "10px monospace";
+          const textWidth = ctx.measureText(tagText).width;
+          const padX = 4;
+          const padY = 2;
 
-        ctx.fillStyle = "rgba(11, 14, 20, 0.85)";
-        ctx.strokeStyle = drv.teamColor;
-        ctx.lineWidth = isFocused ? 1.5 : 1;
-        ctx.beginPath();
-        ctx.roundRect(
-          screenX - textWidth / 2 - padX,
-          screenY - 22,
-          textWidth + padX * 2,
-          15,
-          3
-        );
-        ctx.fill();
-        ctx.stroke();
+          ctx.fillStyle = "rgba(11, 14, 20, 0.85)";
+          ctx.strokeStyle = drv.teamColor;
+          ctx.lineWidth = isFocused ? 1.5 : 1;
+          ctx.beginPath();
+          ctx.roundRect(
+            screenX - textWidth / 2 - padX,
+            screenY - 22,
+            textWidth + padX * 2,
+            15,
+            3
+          );
+          ctx.fill();
+          ctx.stroke();
 
-        // Tag Text
-        ctx.fillStyle = "#FFFFFF";
-        ctx.textAlign = "center";
-        ctx.fillText(tagText, screenX, screenY - 11);
+          // Tag Text
+          ctx.fillStyle = "#FFFFFF";
+          ctx.textAlign = "center";
+          ctx.fillText(tagText, screenX, screenY - 11);
 
-        ctx.restore();
+          ctx.restore();
+        }
       }
 
       ctx.restore();
@@ -284,7 +288,7 @@ export function Track2D({
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [circuit, drivers, focusedDriver, scale, offset, bounds]);
+  }, [circuit, drivers, focusedDriver, scale, offset, bounds, showDriverLabels]);
 
   return (
     <div

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { WeatherSample } from "@/types/telemetry";
-import { CloudRain, Wind, Thermometer, Flag, AlertTriangle } from "lucide-react";
+import { CloudRain, Wind, Thermometer, Flag } from "lucide-react";
 
 interface WeatherWidgetProps {
   weather: WeatherSample;
@@ -19,53 +19,69 @@ export function WeatherWidget({ weather }: WeatherWidgetProps) {
 
   if (isRed) {
     flagBg = "bg-red-600/30 text-red-300 border-red-500 animate-pulse";
-    flagText = "RED FLAG - SESSION STOPPED";
+    flagText = "RED FLAG";
   } else if (isSC) {
     flagBg = "bg-amber-500/30 text-amber-300 border-amber-500 animate-pulse";
     flagText = "SAFETY CAR (SC)";
   } else if (isVSC) {
     flagBg = "bg-amber-500/25 text-amber-300 border-amber-500";
-    flagText = "VIRTUAL SAFETY CAR (VSC)";
+    flagText = "VSC ACTIVE";
   } else if (isYellow) {
     flagBg = "bg-yellow-500/25 text-yellow-300 border-yellow-500";
     flagText = "YELLOW FLAG";
   }
 
   return (
-    <div className="flex items-center gap-3 glass-panel rounded-xl px-3 py-1.5 border border-white/10 shadow-xl select-none">
-      {/* Race Control Flag Pill */}
-      <div
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold tracking-wider uppercase border ${flagBg}`}
-      >
-        <Flag className="w-3.5 h-3.5" />
-        <span>{flagText}</span>
+    <div className="w-64 backdrop-blur-md bg-black/60 border border-white/10 rounded-lg p-3 text-xs shadow-2xl flex flex-col gap-2 select-none">
+      {/* Race Control Flag Status Header */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-mono uppercase font-bold text-slate-400 tracking-wider">
+          CONDITIONS
+        </span>
+        <div
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase border transition-all ${flagBg}`}
+        >
+          <Flag className="w-3 h-3" />
+          <span>{flagText}</span>
+        </div>
       </div>
 
-      {/* Weather Stats Bar */}
-      <div className="flex items-center gap-4 text-xs font-mono divide-x divide-white/10 pl-1">
+      {/* Weather Metrics Grid */}
+      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5 font-mono text-[11px]">
         {/* Track Temp */}
-        <div className="flex items-center gap-1 text-slate-300" title="Track Temperature">
-          <Thermometer className="w-3.5 h-3.5 text-rose-400" />
-          <span className="text-slate-400">TRK:</span>
-          <span className="font-bold text-white">{weather.track_temp.toFixed(1)}°C</span>
+        <div className="flex items-center gap-2 text-slate-300" title="Track Temperature">
+          <Thermometer className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+          <div className="flex flex-col">
+            <span className="text-[9px] text-slate-400 uppercase leading-none">Track</span>
+            <span className="font-bold text-white leading-tight">{weather.track_temp.toFixed(1)}°C</span>
+          </div>
         </div>
 
         {/* Air Temp */}
-        <div className="flex items-center gap-1 text-slate-300 pl-3" title="Air Temperature">
-          <span className="text-slate-400">AIR:</span>
-          <span className="font-bold text-white">{weather.air_temp.toFixed(1)}°C</span>
+        <div className="flex items-center gap-2 text-slate-300" title="Air Temperature">
+          <Thermometer className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
+          <div className="flex flex-col">
+            <span className="text-[9px] text-slate-400 uppercase leading-none">Air</span>
+            <span className="font-bold text-white leading-tight">{weather.air_temp.toFixed(1)}°C</span>
+          </div>
         </div>
 
-        {/* Humidity */}
-        <div className="flex items-center gap-1 text-slate-300 pl-3" title="Relative Humidity">
-          <CloudRain className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="font-bold text-white">{Math.round(weather.humidity)}%</span>
+        {/* Humidity / Rain */}
+        <div className="flex items-center gap-2 text-slate-300" title="Relative Humidity / Rain Risk">
+          <CloudRain className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+          <div className="flex flex-col">
+            <span className="text-[9px] text-slate-400 uppercase leading-none">Rain / Hum</span>
+            <span className="font-bold text-white leading-tight">{Math.round(weather.humidity)}%</span>
+          </div>
         </div>
 
-        {/* Wind Speed */}
-        <div className="flex items-center gap-1 text-slate-300 pl-3" title="Wind Speed and Direction">
-          <Wind className="w-3.5 h-3.5 text-slate-400" />
-          <span className="font-bold text-white">{weather.wind_speed.toFixed(1)} km/h</span>
+        {/* Wind Speed & Direction */}
+        <div className="flex items-center gap-2 text-slate-300" title="Wind Speed and Direction">
+          <Wind className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+          <div className="flex flex-col">
+            <span className="text-[9px] text-slate-400 uppercase leading-none">Wind</span>
+            <span className="font-bold text-white leading-tight">{weather.wind_speed.toFixed(1)} km/h</span>
+          </div>
         </div>
       </div>
     </div>

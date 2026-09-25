@@ -25,6 +25,7 @@ interface ViewportContainerProps {
   onToggleViewportMode: (mode: ViewportMode) => void;
   resetTrigger?: number;
   isInteractionDisabled?: boolean;
+  showDriverLabels?: boolean;
 }
 
 export function ViewportContainer({
@@ -38,6 +39,7 @@ export function ViewportContainer({
   onToggleViewportMode,
   resetTrigger = 0,
   isInteractionDisabled = false,
+  showDriverLabels = true,
 }: ViewportContainerProps) {
   const [hasWebGL, setHasWebGL] = useState<boolean>(true);
 
@@ -81,6 +83,7 @@ export function ViewportContainer({
         onSelectDriver={onSelectDriver}
         onDeselectDriver={onDeselectDriver}
         isInteractionDisabled={isInteractionDisabled}
+        showDriverLabels={showDriverLabels}
       />
     );
   }
@@ -142,6 +145,7 @@ export function ViewportContainer({
             driver={drv}
             isFocused={focusedDriver?.code === drv.code}
             onSelect={onSelectDriver}
+            showLabels={showDriverLabels}
           />
         ))}
 
