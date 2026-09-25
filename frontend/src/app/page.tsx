@@ -17,12 +17,10 @@ import { PlaybackControls } from "@/components/controls/PlaybackControls";
 import { ViewModeSelector } from "@/components/controls/ViewModeSelector";
 import { SessionPicker } from "@/components/controls/SessionPicker";
 import {
-  Activity,
-  Layers,
-  Sparkles,
   SlidersHorizontal,
   X,
-  Radio,
+  Tag,
+  Gauge,
 } from "lucide-react";
 
 export default function ReplayDashboard() {
@@ -215,20 +213,14 @@ export default function ReplayDashboard() {
           </div>
         )}
 
-        {/* Right: Viewport Toggles, Labels, Units & Reset Cluster */}
+        {/* Right: Viewport Toggles & Reset Cluster */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <ViewModeSelector
             viewportMode={viewportMode}
             cameraMode={cameraMode}
-            speedUnit={speedUnit}
-            showDriverLabels={showDriverLabels}
             isDriverFocused={Boolean(playback.selectedDriverCode || cameraMode === "chase")}
             onToggleViewportMode={setViewportMode}
             onToggleCameraMode={setCameraMode}
-            onToggleSpeedUnit={() =>
-              setSpeedUnit((prev) => (prev === "kmh" ? "mph" : "kmh"))
-            }
-            onToggleDriverLabels={() => setShowDriverLabels((prev) => !prev)}
             onResetCamera={handleResetCamera}
           />
         </div>
@@ -284,10 +276,40 @@ export default function ReplayDashboard() {
           </div>
         )}
 
-        {/* Bottom-Right Floating Overlay: Weather & Race Conditions */}
+        {/* Bottom-Right Floating Stack: Weather Card + Action Strip */}
         {payload && (
-          <div className="absolute bottom-24 right-4 z-20 pointer-events-auto hidden sm:block animate-in fade-in duration-200">
+          <div className="absolute bottom-24 right-4 z-20 pointer-events-auto hidden sm:flex flex-col gap-2 animate-in fade-in duration-200">
             <WeatherWidget weather={playback.currentWeather} />
+
+            {/* Docked Action Strip: Driver Labels & Speed Unit */}
+            <div className="w-64 backdrop-blur-md bg-black/60 border border-white/10 rounded-lg p-1.5 shadow-2xl flex items-center justify-between gap-1.5 select-none font-mono text-xs">
+              <button
+                onClick={() => setShowDriverLabels((prev) => !prev)}
+                title={showDriverLabels ? "Hide 3D/2D Driver Name Tags" : "Show 3D/2D Driver Name Tags"}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md font-bold text-[11px] transition border ${
+                  showDriverLabels
+                    ? "bg-white/15 text-white border-white/20 shadow-sm"
+                    : "bg-black/30 text-slate-400 hover:text-slate-200 border-white/5"
+                }`}
+              >
+                <Tag className={`w-3.5 h-3.5 ${showDriverLabels ? "text-emerald-400" : "text-slate-500"}`} />
+                <span>TAGS</span>
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    showDriverLabels ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-slate-600"
+                  }`}
+                />
+              </button>
+
+              <button
+                onClick={() => setSpeedUnit((prev) => (prev === "kmh" ? "mph" : "kmh"))}
+                title="Toggle speed unit between km/h and mph"
+                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-black/30 hover:bg-white/10 text-slate-200 hover:text-white border border-white/5 font-bold text-[11px] transition"
+              >
+                <Gauge className="w-3.5 h-3.5 text-amber-400" />
+                <span>UNIT: {speedUnit.toUpperCase()}</span>
+              </button>
+            </div>
           </div>
         )}
 

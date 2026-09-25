@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 import fastf1
 import pandas as pd
 from app.config import settings
-from app.models.schemas import EventInfo, SessionInfo, EventDetailsResponse, LapSummary
+from app.models.schemas import EventInfo, SessionInfo, EventDetailsResponse, LapSummary, TurnMarker
 
 logger = logging.getLogger("velocitrack.fastf1")
 
@@ -172,4 +172,49 @@ def load_fastf1_session(year: int, event_name: str, session_code: str):
     session = fastf1.get_session(year, event_name, session_code)
     session.load(telemetry=True, laps=True, weather=True)
     return session
+
+
+def extract_circuit_turns(session, scale: float = 0.1) -> List[TurnMarker]:
+    """
+    Extracts corner markers from FastF1 circuit_info for any loaded Grand Prix session,
+    translating and scaling X, Y, Z coordinates with the identical downsampling/scaling matrix
+    used for the track centerline, and serializing them into TurnMarker models.
+    """
+    turns: List[TurnMarker] = []
+    try:
+        circuit_info = session.get_circuit_info()
+        if circuit_info is not None and hasattr(circuit_info, "corners"):
+            corners_df = circuit_info.corners
+            if corners_df is not None and not corners_df.empty:
+                for _, corner in corners_df.iterrows():
+                    num = int(corner.get("Number", 0))
+                    letter = str(corner.get("Letter", ""))
+                    if pd.isna(letter) or letter == "nan":
+                        letter = ""
+                    name = f"Turn {num}" if not letter else f"Turn {num}{letter}"
+                    # FastF1 coordinates in decimeters (1/10 meter)
+                    raw_x = float(corner.get("X", 0.0))
+                    raw_y = float(corner.get("Y", 0.0))
+                    raw_z = float(corner.get("Z", 0.0)) if "Z" in corner and pd.notnull(corner["Z"]) else 0.0
+
+                    angle_val = corner.get("Angle")
+                    dist_val = corner.get("Distance")
+
+                    turns.append(
+                        TurnMarker(
+                            number=num,
+                            name=name,
+                            x=round(raw_x * scale, 2),
+                            y=round(raw_y * scale, 2),
+                            z=round(raw_z * scale, 2),
+                            angle=float(angle_val) if pd.notnull(angle_val) else None,
+                            distance=round(float(dist_val), 1) if pd.notnull(dist_val) else None,
+                        )
+                    )
+                logger.info(f"Successfully extracted {len(turns)} turns from FastF1 circuit info")
+    except Exception as e:
+        logger.warning(f"Failed to extract circuit corners from FastF1: {e}")
+
+    return turns
+
 

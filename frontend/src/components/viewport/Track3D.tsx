@@ -152,23 +152,53 @@ export function Track3D({ circuit }: Track3DProps) {
         </group>
       )}
 
-      {/* Turn Markers */}
-      {circuit.turns.map((turn) => (
-        <group key={`turn-${turn.number}`} position={[turn.x, (turn.z || 0) + 1.5, turn.y]}>
-          <Html position={[0, 4, 0]} center distanceFactor={140} zIndexRange={[80, 0]}>
-            <div className="group flex flex-col items-center pointer-events-none">
-              <div className="w-5 h-5 rounded-full bg-slate-900/90 border border-slate-600 text-[10px] font-mono font-bold text-slate-300 flex items-center justify-center shadow-md">
-                {turn.number}
-              </div>
-              {turn.name && (
-                <div className="mt-0.5 px-1.5 py-0.2 bg-black/75 rounded text-[8px] font-mono text-slate-400 whitespace-nowrap">
-                  {turn.name}
+      {/* Elevated Turn Markers with Non-Clipping Badges */}
+      {circuit.turns.map((turn) => {
+        const surfaceY = turn.z || 0.1;
+        const elevatedY = surfaceY + 12.0; // Elevate +Y units above track surface to eliminate clipping
+        return (
+          <group
+            key={`turn-${turn.number}-${turn.name || ""}`}
+            position={[turn.x, elevatedY, turn.y]}
+          >
+            {/* Vertical Marker Guide Pin to Track Surface */}
+            <mesh position={[0, -5.5, 0]} renderOrder={2}>
+              <cylinderGeometry args={[0.15, 0.15, 11, 8]} />
+              <meshBasicMaterial
+                color="#0284c7"
+                transparent
+                opacity={0.45}
+                depthTest={false}
+              />
+            </mesh>
+
+            {/* Glowing Turn Apex Anchor Dot */}
+            <mesh position={[0, 0, 0]} renderOrder={3}>
+              <sphereGeometry args={[0.7, 16, 16]} />
+              <meshBasicMaterial color="#38bdf8" depthTest={false} />
+            </mesh>
+
+            {/* Floating Elevated Turn Badge */}
+            <Html
+              position={[0, 1.8, 0]}
+              center
+              distanceFactor={135}
+              zIndexRange={[100, 0]}
+            >
+              <div className="flex flex-col items-center pointer-events-none select-none">
+                <div className="w-6 h-6 rounded-full bg-slate-950/95 border-2 border-sky-400 text-[11px] font-mono font-black text-sky-200 flex items-center justify-center shadow-[0_0_10px_rgba(56,189,248,0.6)]">
+                  {turn.number}
                 </div>
-              )}
-            </div>
-          </Html>
-        </group>
-      ))}
+                {turn.name && turn.name !== `Turn ${turn.number}` && (
+                  <div className="mt-1 px-1.5 py-0.5 bg-black/90 border border-white/10 rounded text-[9px] font-mono font-semibold text-slate-300 whitespace-nowrap shadow-md">
+                    {turn.name}
+                  </div>
+                )}
+              </div>
+            </Html>
+          </group>
+        );
+      })}
     </group>
   );
 }

@@ -56,21 +56,28 @@ export function ViewportContainer({
     }
   }, []);
 
-  // Compute circuit geometrical center for camera positioning
-  const circuitCenter: [number, number, number] = useMemo(() => {
-    if (!circuit || !circuit.centerline || circuit.centerline.length === 0) {
-      return [0, 0, 0];
+  // Compute true 3D Bounding Box and Bounding Sphere for camera initial framing and grid scaling
+  const { sphereCenter, initialCamPos, gridRadius } = useMemo(() => {
+    const box = new THREE.Box3();
+    if (circuit && circuit.centerline && circuit.centerline.length > 0) {
+      for (const pt of circuit.centerline) {
+        box.expandByPoint(new THREE.Vector3(pt[0], pt[2] || 0.1, pt[1]));
+      }
+    } else {
+      box.set(new THREE.Vector3(-150, 0, -150), new THREE.Vector3(150, 10, 150));
     }
-    let sumX = 0;
-    let sumY = 0;
-    let sumZ = 0;
-    const count = circuit.centerline.length;
-    for (const pt of circuit.centerline) {
-      sumX += pt[0];
-      sumZ += pt[1]; // In Three.js: X = X, Y = Elevation(Z), Z = Y
-      sumY += pt[2] || 0;
-    }
-    return [sumX / count, sumY / count, sumZ / count];
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const fovInRad = (48 * Math.PI) / 180;
+    const distance = (Math.max(20, sphere.radius) / Math.sin(fovInRad / 2)) * 1.15;
+    return {
+      sphereCenter: [sphere.center.x, sphere.center.y, sphere.center.z] as [number, number, number],
+      initialCamPos: [
+        sphere.center.x,
+        sphere.center.y + distance * 0.7,
+        sphere.center.z + distance * 0.7,
+      ] as [number, number, number],
+      gridRadius: Math.max(3000, sphere.radius * 3.5),
+    };
   }, [circuit]);
 
   // If user selected 2D mode or device lacks WebGL
@@ -98,10 +105,10 @@ export function ViewportContainer({
     >
       <Canvas
         camera={{
-          position: [circuitCenter[0], 240, circuitCenter[2] + 220],
+          position: initialCamPos,
           fov: 48,
           near: 0.5,
-          far: 2500,
+          far: 8000,
         }}
         gl={{
           antialias: true,
@@ -115,7 +122,7 @@ export function ViewportContainer({
         }}
         onCreated={({ gl, scene }) => {
           gl.setClearColor(new THREE.Color("#0b0e14"));
-          scene.fog = new THREE.FogExp2("#0b0e14", 0.0012);
+          scene.fog = new THREE.FogExp2("#0b0e14", 0.0008);
         }}
       >
         {/* Cinematic Studio & Sun Lighting */}
@@ -131,8 +138,8 @@ export function ViewportContainer({
 
         {/* Ambient Ground Grid */}
         <gridHelper
-          args={[3000, 60, "#1e293b", "#0f172a"]}
-          position={[circuitCenter[0], -0.2, circuitCenter[2]]}
+          args={[gridRadius, 60, "#1e293b", "#0f172a"]}
+          position={[sphereCenter[0], -0.2, sphereCenter[2]]}
         />
 
         {/* 3D Track & Environment */}
@@ -149,13 +156,11 @@ export function ViewportContainer({
           />
         ))}
 
-        {/* Camera Control Rig with Smooth Lerp Overview Transition */}
+        {/* Camera Control Rig with Smooth Dynamic Lerp Overview Transition */}
         <CameraRig
           mode={cameraMode}
           focusedDriver={focusedDriver}
-          origin={circuitCenter}
-          defaultHeight={240}
-          defaultDistance={220}
+          circuit={circuit}
           resetTrigger={resetTrigger}
           disabled={isInteractionDisabled}
         />

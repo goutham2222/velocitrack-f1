@@ -83,25 +83,9 @@ def build_replay_payload_from_session(
 
         total_track_length = float(ref_telemetry["Distance"].max() if "Distance" in ref_telemetry else 5000.0)
 
-        # Corners from circuit info
-        turns: List[TurnMarker] = []
-        try:
-            circuit_info = session.get_circuit_info()
-            if circuit_info is not None and hasattr(circuit_info, "corners"):
-                for _, corner in circuit_info.corners.iterrows():
-                    turns.append(
-                        TurnMarker(
-                            number=int(corner.get("Number", 0)),
-                            name=str(corner.get("Letter", corner.get("Number", ""))),
-                            x=round(float(corner.get("X", 0.0)) * scale, 2),
-                            y=round(float(corner.get("Y", 0.0)) * scale, 2),
-                            z=0.0,
-                            angle=float(corner.get("Angle", 0.0)) if "Angle" in corner else None,
-                            distance=round(float(corner.get("Distance", 0.0)), 1),
-                        )
-                    )
-        except Exception as e:
-            logger.debug(f"Circuit corners not available from FastF1: {e}")
+        # Corners from FastF1 circuit info
+        from app.services.fastf1_client import extract_circuit_turns
+        turns: List[TurnMarker] = extract_circuit_turns(session, scale=scale)
 
         sectors = [
             SectorBoundary(sector=1, start_distance=0.0, end_distance=total_track_length * 0.33),

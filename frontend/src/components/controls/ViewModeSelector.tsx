@@ -1,32 +1,22 @@
-"use client";
-
 import React from "react";
-import { ViewportMode, CameraMode, SpeedUnit } from "@/types/telemetry";
-import { Box, Map, Eye, Target, Gauge, Tag, CameraOff } from "lucide-react";
+import { ViewportMode, CameraMode } from "@/types/telemetry";
+import { Box, Map, Eye, Target, CameraOff } from "lucide-react";
 
 interface ViewModeSelectorProps {
   viewportMode: ViewportMode;
   cameraMode: CameraMode;
-  speedUnit: SpeedUnit;
-  showDriverLabels: boolean;
   isDriverFocused?: boolean;
   onToggleViewportMode: (mode: ViewportMode) => void;
   onToggleCameraMode: (mode: CameraMode) => void;
-  onToggleSpeedUnit: () => void;
-  onToggleDriverLabels: () => void;
   onResetCamera?: () => void;
 }
 
 export function ViewModeSelector({
   viewportMode,
   cameraMode,
-  speedUnit,
-  showDriverLabels,
   isDriverFocused = false,
   onToggleViewportMode,
   onToggleCameraMode,
-  onToggleSpeedUnit,
-  onToggleDriverLabels,
   onResetCamera,
 }: ViewModeSelectorProps) {
   return (
@@ -88,34 +78,6 @@ export function ViewModeSelector({
           </button>
         </div>
       )}
-
-      {/* Driver Labels Toggle */}
-      <button
-        onClick={onToggleDriverLabels}
-        title={showDriverLabels ? "Hide Driver Labels" : "Show Driver Labels"}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition border ${
-          showDriverLabels
-            ? "bg-white/15 text-white border-white/10 shadow-sm"
-            : "bg-black/40 text-slate-500 hover:text-slate-300 border-white/5"
-        }`}
-      >
-        <Tag
-          className={`w-3.5 h-3.5 ${
-            showDriverLabels ? "text-emerald-400" : "text-slate-500"
-          }`}
-        />
-        <span className="hidden sm:inline">LABELS</span>
-      </button>
-
-      {/* Speed Units Toggle */}
-      <button
-        onClick={onToggleSpeedUnit}
-        title="Toggle speed unit (km/h vs mph)"
-        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/40 hover:bg-white/10 text-xs font-mono font-bold text-slate-300 hover:text-white border border-white/5 transition"
-      >
-        <Gauge className="w-3.5 h-3.5 text-amber-400" />
-        <span>{speedUnit.toUpperCase()}</span>
-      </button>
 
       {/* Reset View / Exit Chase Cam button (when a driver is focused) */}
       {isDriverFocused && onResetCamera && (
