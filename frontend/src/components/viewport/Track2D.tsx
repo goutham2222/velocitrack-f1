@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { CircuitGeometry, InterpolatedDriverState } from "@/types/telemetry";
-import { Maximize2, ZoomIn, ZoomOut, Compass } from "lucide-react";
+import { ZoomIn, ZoomOut, Compass, RotateCw } from "lucide-react";
 
 interface Track2DProps {
   circuit: CircuitGeometry;
@@ -12,6 +12,8 @@ interface Track2DProps {
   onDeselectDriver?: () => void;
   isInteractionDisabled?: boolean;
   showDriverLabels?: boolean;
+  zoomPercent?: number;
+  onZoomChange?: (zoom: number) => void;
 }
 
 export function Track2D({
@@ -22,13 +24,38 @@ export function Track2D({
   onDeselectDriver,
   isInteractionDisabled = false,
   showDriverLabels = true,
+  zoomPercent,
+  onZoomChange,
 }: Track2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [scale, setScale] = useState<number>(0.9);
-  const [offset, setOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Targets and smoothly interpolated values for 60 FPS damping
+  const targetScaleRef = useRef<number>(0.9);
+  const currentScaleRef = useRef<number>(0.9);
+  const targetOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const currentOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const targetRotationRef = useRef<number>(0);
+  const currentRotationRef = useRef<number>(0);
+
+  // Synchronize callbacks and external zoom props
+  const onZoomChangeRef = useRef(onZoomChange);
+  useEffect(() => {
+    onZoomChangeRef.current = onZoomChange;
+  }, [onZoomChange]);
+
+  const lastExternalZoomRef = useRef<number | undefined>(zoomPercent);
+  const isInternalZoomRef = useRef<boolean>(false);
+
+  // Mouse interaction state refs
   const isDraggingRef = useRef<boolean>(false);
+  const isRotatingRef = useRef<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const clickStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lastMouseAngleRef = useRef<number>(0);
+
+  // Reactive state for HUD overlay display (angle and zoom)
+  const [hudRotationDeg, setHudRotationDeg] = useState<number>(0);
+  const [hudScalePercent, setHudScalePercent] = useState<number>(100);
 
   // Compute track bounds for auto-centering
   const bounds = React.useMemo(() => {
@@ -60,42 +87,125 @@ export function Track2D({
     };
   }, [circuit]);
 
-  // Handle Zoom & Pan
+  // Synchronize with external Zoom Bar slider or button changes
+  useEffect(() => {
+    if (zoomPercent === undefined) return;
+    if (isInternalZoomRef.current) {
+      isInternalZoomRef.current = false;
+      return;
+    }
+    if (zoomPercent === lastExternalZoomRef.current) return;
+    lastExternalZoomRef.current = zoomPercent;
+
+    const newTargetScale = (zoomPercent / 100) * 0.9;
+    targetScaleRef.current = Math.max(0.3, Math.min(6.0, newTargetScale));
+  }, [zoomPercent]);
+
+  // Smooth Cursor-Anchored Zoom
   const handleWheel = (e: React.WheelEvent) => {
     if (isInteractionDisabled) return;
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.15 : 0.88;
-    setScale((prev) => Math.max(0.3, Math.min(6.0, prev * factor)));
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left - canvas.clientWidth / 2;
+    const mouseY = e.clientY - rect.top - canvas.clientHeight / 2;
+
+    const factor = e.deltaY < 0 ? 1.15 : 0.87;
+    const newScale = Math.max(0.3, Math.min(6.0, targetScaleRef.current * factor));
+    const actualFactor = newScale / targetScaleRef.current;
+
+    // Anchor zoom at mouse coordinates so cursor stays locked to the same map point
+    targetOffsetRef.current = {
+      x: mouseX - (mouseX - targetOffsetRef.current.x) * actualFactor,
+      y: mouseY - (mouseY - targetOffsetRef.current.y) * actualFactor,
+    };
+    targetScaleRef.current = newScale;
+
+    isInternalZoomRef.current = true;
+    const reportedPercent = Math.round((newScale / 0.9) * 100);
+    if (onZoomChangeRef.current) {
+      onZoomChangeRef.current(reportedPercent);
+    }
   };
 
+  // Mouse Down: Left click = Pan, Right click or Alt+click = Circular Rotate
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isInteractionDisabled) return;
-    isDraggingRef.current = true;
-    dragStartRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
-    clickStartRef.current = { x: e.clientX, y: e.clientY };
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const isRotate = e.button === 2 || e.altKey || e.shiftKey;
+
+    if (isRotate) {
+      isRotatingRef.current = true;
+      lastMouseAngleRef.current = Math.atan2(mouseY - centerY, mouseX - centerX);
+    } else if (e.button === 0) {
+      isDraggingRef.current = true;
+      dragStartRef.current = {
+        x: e.clientX - targetOffsetRef.current.x,
+        y: e.clientY - targetOffsetRef.current.y,
+      };
+      clickStartRef.current = { x: e.clientX, y: e.clientY };
+    }
   };
 
+  // Mouse Move: Apply Pan or Circular Rotation
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isInteractionDisabled || !isDraggingRef.current) return;
-    setOffset({
-      x: e.clientX - dragStartRef.current.x,
-      y: e.clientY - dragStartRef.current.y,
-    });
+    if (isInteractionDisabled) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    if (isRotatingRef.current) {
+      const rect = canvas.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const currentAngle = Math.atan2(mouseY - centerY, mouseX - centerX);
+      let deltaAngle = currentAngle - lastMouseAngleRef.current;
+      while (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+      while (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+
+      targetRotationRef.current += deltaAngle;
+      lastMouseAngleRef.current = currentAngle;
+    } else if (isDraggingRef.current) {
+      targetOffsetRef.current = {
+        x: e.clientX - dragStartRef.current.x,
+        y: e.clientY - dragStartRef.current.y,
+      };
+    }
   };
 
+  // Mouse Up: Complete Drag or Check Driver Selection Hit-Testing
   const handleMouseUp = (e: React.MouseEvent) => {
     if (isInteractionDisabled) {
       isDraggingRef.current = false;
+      isRotatingRef.current = false;
       return;
     }
+
+    const wasRotating = isRotatingRef.current;
     const wasDragging = isDraggingRef.current;
+    isRotatingRef.current = false;
     isDraggingRef.current = false;
+
+    if (wasRotating) return;
 
     // Check if stationary click (< 6px movement)
     const moveDist = Math.hypot(
       e.clientX - clickStartRef.current.x,
       e.clientY - clickStartRef.current.y
     );
+
     if (wasDragging && moveDist < 6) {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -105,18 +215,23 @@ export function Track2D({
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       const fitScale =
-        Math.min(width / bounds.width, height / bounds.height) * 0.75 * scale;
+        Math.min(width / bounds.width, height / bounds.height) * 0.75 * currentScaleRef.current;
 
-      // Find if clicked on any driver
+      // Transform click coordinate through current rotation, offset, and scale
+      const dx = clickX - (width / 2 + currentOffsetRef.current.x);
+      const dy = clickY - (height / 2 + currentOffsetRef.current.y);
+      const angle = currentRotationRef.current;
+      const rx = dx * Math.cos(-angle) - dy * Math.sin(-angle);
+      const ry = dx * Math.sin(-angle) + dy * Math.cos(-angle);
+
+      const worldX = bounds.centerX + rx / fitScale;
+      const worldY = bounds.centerY - ry / fitScale;
+
       let clickedDriverCode: string | null = null;
       const driverList = Object.values(drivers);
       for (const drv of driverList) {
-        const screenX =
-          width / 2 + offset.x + (drv.x - bounds.centerX) * fitScale;
-        const screenY =
-          height / 2 + offset.y - (drv.y - bounds.centerY) * fitScale;
-        const dist = Math.hypot(clickX - screenX, clickY - screenY);
-        if (dist < 20) {
+        const dist = Math.hypot(worldX - drv.x, worldY - drv.y) * fitScale;
+        if (dist < 22) {
           clickedDriverCode = drv.code;
           break;
         }
@@ -131,11 +246,20 @@ export function Track2D({
   };
 
   const resetView = useCallback(() => {
-    setScale(0.9);
-    setOffset({ x: 0, y: 0 });
+    targetScaleRef.current = 0.9;
+    targetOffsetRef.current = { x: 0, y: 0 };
+    targetRotationRef.current = 0;
+    isInternalZoomRef.current = true;
+    if (onZoomChangeRef.current) {
+      onZoomChangeRef.current(100);
+    }
   }, []);
 
-  // Main 2D Canvas rendering loop
+  const rotate90 = useCallback(() => {
+    targetRotationRef.current += Math.PI / 4;
+  }, []);
+
+  // 60 FPS Render loop with smooth interpolation
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -143,8 +267,24 @@ export function Track2D({
     if (!ctx) return;
 
     let animId: number;
+    let frameCount = 0;
 
     const render = () => {
+      // Smooth damping interpolation (no sudden jumps!)
+      const lerpFactor = 0.18;
+      currentScaleRef.current += (targetScaleRef.current - currentScaleRef.current) * lerpFactor;
+      currentOffsetRef.current.x += (targetOffsetRef.current.x - currentOffsetRef.current.x) * lerpFactor;
+      currentOffsetRef.current.y += (targetOffsetRef.current.y - currentOffsetRef.current.y) * lerpFactor;
+      currentRotationRef.current += (targetRotationRef.current - currentRotationRef.current) * lerpFactor;
+
+      // Periodically update HUD state without causing re-render storms
+      frameCount++;
+      if (frameCount % 6 === 0) {
+        const deg = Math.round(((-currentRotationRef.current * 180) / Math.PI) % 360);
+        setHudRotationDeg(deg < 0 ? deg + 360 : deg);
+        setHudScalePercent(Math.round((currentScaleRef.current / 0.9) * 100));
+      }
+
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       if (canvas.width !== width || canvas.height !== height) {
@@ -159,11 +299,15 @@ export function Track2D({
       ctx.fillRect(0, 0, width, height);
 
       ctx.save();
-      // Center canvas origin
-      ctx.translate(width / 2 + offset.x, height / 2 + offset.y);
+      // Translate to center + smoothed offset
+      ctx.translate(width / 2 + currentOffsetRef.current.x, height / 2 + currentOffsetRef.current.y);
+
+      // Rotate canvas by current smoothed rotation angle
+      ctx.rotate(currentRotationRef.current);
 
       // Calculate base fit ratio
-      const fitScale = Math.min(width / bounds.width, height / bounds.height) * 0.75 * scale;
+      const fitScale =
+        Math.min(width / bounds.width, height / bounds.height) * 0.75 * currentScaleRef.current;
       ctx.scale(fitScale, -fitScale); // Invert Y to match Cartesian
       ctx.translate(-bounds.centerX, -bounds.centerY);
 
@@ -209,7 +353,7 @@ export function Track2D({
         ctx.fillRect(startPt[0] - 2, startPt[1] - 8, 4, 16);
       }
 
-      // Draw Turn Markers
+      // Draw Turn Markers (Upright with Counter-Rotation)
       for (const turn of circuit.turns) {
         ctx.fillStyle = "#475569";
         ctx.beginPath();
@@ -217,15 +361,17 @@ export function Track2D({
         ctx.fill();
 
         ctx.save();
+        ctx.translate(turn.x, turn.y);
         ctx.scale(1 / fitScale, -1 / fitScale);
+        ctx.rotate(-currentRotationRef.current); // Keep turn label upright
         ctx.fillStyle = "#94A3B8";
         ctx.font = "bold 9px monospace";
         ctx.textAlign = "center";
-        ctx.fillText(`T${turn.number}`, turn.x * fitScale, -turn.y * fitScale - 8);
+        ctx.fillText(`T${turn.number}`, 0, -8);
         ctx.restore();
       }
 
-      // Draw Drivers
+      // Draw Drivers (Halo, Inner Dot, and Upright Tags)
       const driverList = Object.values(drivers);
       for (const drv of driverList) {
         const isFocused = focusedDriver?.code === drv.code;
@@ -245,38 +391,30 @@ export function Track2D({
         ctx.fillStyle = "#FFFFFF";
         ctx.fill();
 
-        // Driver Label (Tag)
+        // Driver Label (Tag) - Always kept upright and readable
         if (showDriverLabels) {
           ctx.save();
+          ctx.translate(drv.x, drv.y);
           ctx.scale(1 / fitScale, -1 / fitScale);
-          const screenX = drv.x * fitScale;
-          const screenY = -drv.y * fitScale;
+          ctx.rotate(-currentRotationRef.current); // Counter-rotate so tag is upright
 
-          // Tag Background
           const tagText = drv.code;
           ctx.font = isFocused ? "bold 11px monospace" : "10px monospace";
           const textWidth = ctx.measureText(tagText).width;
           const padX = 4;
-          const padY = 2;
 
           ctx.fillStyle = "rgba(11, 14, 20, 0.85)";
           ctx.strokeStyle = drv.teamColor;
           ctx.lineWidth = isFocused ? 1.5 : 1;
           ctx.beginPath();
-          ctx.roundRect(
-            screenX - textWidth / 2 - padX,
-            screenY - 22,
-            textWidth + padX * 2,
-            15,
-            3
-          );
+          ctx.roundRect(-textWidth / 2 - padX, -22, textWidth + padX * 2, 15, 3);
           ctx.fill();
           ctx.stroke();
 
           // Tag Text
           ctx.fillStyle = "#FFFFFF";
           ctx.textAlign = "center";
-          ctx.fillText(tagText, screenX, screenY - 11);
+          ctx.fillText(tagText, 0, -11);
 
           ctx.restore();
         }
@@ -288,13 +426,14 @@ export function Track2D({
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [circuit, drivers, focusedDriver, scale, offset, bounds, showDriverLabels]);
+  }, [circuit, drivers, focusedDriver, bounds, showDriverLabels]);
 
   return (
     <div
       className={`relative w-full h-full overflow-hidden bg-titanium-950 ${
         isInteractionDisabled ? "pointer-events-none select-none" : ""
       }`}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <canvas
         ref={canvasRef}
@@ -306,33 +445,64 @@ export function Track2D({
         onMouseLeave={handleMouseUp}
       />
 
-      {/* 2D Viewport Overlay HUD Controls */}
-      <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-titanium-900/80 backdrop-blur-md border border-white/10 rounded-lg p-1 shadow-xl">
+      {/* 2D Viewport Overlay HUD Controls (Zoom In/Out, Circular Rotate, Compass Reset) */}
+      <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-titanium-900/80 backdrop-blur-md border border-white/10 rounded-lg p-1.5 shadow-xl select-none font-mono">
         <button
-          onClick={() => setScale((s) => Math.min(6.0, s * 1.25))}
+          onClick={() => {
+            targetScaleRef.current = Math.min(6.0, targetScaleRef.current * 1.25);
+            isInternalZoomRef.current = true;
+            if (onZoomChangeRef.current) {
+              onZoomChangeRef.current(Math.round((targetScaleRef.current / 0.9) * 100));
+            }
+          }}
           title="Zoom In"
           className="p-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
         <button
-          onClick={() => setScale((s) => Math.max(0.3, s * 0.8))}
+          onClick={() => {
+            targetScaleRef.current = Math.max(0.3, targetScaleRef.current * 0.8);
+            isInternalZoomRef.current = true;
+            if (onZoomChangeRef.current) {
+              onZoomChangeRef.current(Math.round((targetScaleRef.current / 0.9) * 100));
+            }
+          }}
           title="Zoom Out"
           className="p-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
         <button
-          onClick={resetView}
-          title="Reset View"
+          onClick={rotate90}
+          title="Rotate 45° Clockwise"
           className="p-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition"
         >
-          <Compass className="w-4 h-4" />
+          <RotateCw className="w-4 h-4" />
+        </button>
+        {/* Interactive Circular Compass Widget (Click to Reset North 0°) */}
+        <button
+          onClick={resetView}
+          title={`Heading: ${hudRotationDeg}° • Click to Reset North & Zoom • Right-Click drag on map to rotate`}
+          className="relative flex items-center justify-center w-7 h-7 rounded-full bg-black/50 border border-white/15 hover:border-sky-400 text-slate-300 hover:text-white transition group"
+        >
+          <Compass
+            className="w-4 h-4 text-sky-400 transition-transform duration-75"
+            style={{ transform: `rotate(${-hudRotationDeg}deg)` }}
+          />
+          <span className="absolute -top-1 text-[8px] font-black text-rose-500 pointer-events-none">
+            N
+          </span>
         </button>
       </div>
 
-      <div className="absolute bottom-4 left-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest bg-titanium-950/80 px-2 py-1 rounded border border-white/5 pointer-events-none">
-        Tactical Radar 2D Mode &bull; Scale: {Math.round(scale * 100)}%
+      <div className="absolute bottom-4 left-4 text-[10px] font-mono text-slate-400 uppercase tracking-widest bg-titanium-950/80 backdrop-blur-md px-2.5 py-1 rounded border border-white/10 pointer-events-none flex items-center gap-2">
+        <span>2D RADAR</span>
+        <span className="text-slate-600">&bull;</span>
+        <span>ZOOM: {hudScalePercent}%</span>
+        <span className="text-slate-600">&bull;</span>
+        <span className="text-sky-400">{hudRotationDeg}°</span>
+        <span className="text-[9px] text-slate-500 normal-case">(Right-Click + Drag to Rotate)</span>
       </div>
     </div>
   );

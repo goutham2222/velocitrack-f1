@@ -26,6 +26,8 @@ interface ViewportContainerProps {
   resetTrigger?: number;
   isInteractionDisabled?: boolean;
   showDriverLabels?: boolean;
+  zoomPercent?: number;
+  onZoomChange?: (zoom: number) => void;
 }
 
 export function ViewportContainer({
@@ -40,6 +42,8 @@ export function ViewportContainer({
   resetTrigger = 0,
   isInteractionDisabled = false,
   showDriverLabels = true,
+  zoomPercent,
+  onZoomChange,
 }: ViewportContainerProps) {
   const [hasWebGL, setHasWebGL] = useState<boolean>(true);
 
@@ -91,6 +95,8 @@ export function ViewportContainer({
         onDeselectDriver={onDeselectDriver}
         isInteractionDisabled={isInteractionDisabled}
         showDriverLabels={showDriverLabels}
+        zoomPercent={zoomPercent}
+        onZoomChange={onZoomChange}
       />
     );
   }
@@ -163,6 +169,8 @@ export function ViewportContainer({
           circuit={circuit}
           resetTrigger={resetTrigger}
           disabled={isInteractionDisabled}
+          zoomPercent={zoomPercent}
+          onZoomChange={onZoomChange}
         />
       </Canvas>
     </div>

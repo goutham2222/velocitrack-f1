@@ -21,6 +21,9 @@ import {
   X,
   Tag,
   Gauge,
+  Minus,
+  Plus,
+  ZoomIn,
 } from "lucide-react";
 
 export default function ReplayDashboard() {
@@ -35,6 +38,19 @@ export default function ReplayDashboard() {
   const [viewportMode, setViewportMode] = useState<ViewportMode>("3d");
   const [speedUnit, setSpeedUnit] = useState<SpeedUnit>("kmh");
   const [showDriverLabels, setShowDriverLabels] = useState<boolean>(true);
+  const [zoomPercent, setZoomPercent] = useState<number>(100);
+
+  const handleZoomIn = useCallback(() => {
+    setZoomPercent((prev) => Math.min(300, prev + 15));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoomPercent((prev) => Math.max(30, prev - 15));
+  }, []);
+
+  const handleZoomChange = useCallback((newZoom: number) => {
+    setZoomPercent(Math.min(300, Math.max(30, newZoom)));
+  }, []);
 
   // Playback engine (defaults to global orbit view)
   const playback = usePlayback({
@@ -71,6 +87,7 @@ export default function ReplayDashboard() {
     playback.setSelectedDriverCode(null);
     setCameraMode("orbit");
     setResetTrigger((prev) => prev + 1);
+    setZoomPercent(100);
   }, [playback]);
 
   const handleSelectDriver = useCallback(
@@ -165,23 +182,23 @@ export default function ReplayDashboard() {
       {/* ------------------------------------------------------------------------- */}
       {/* Top Broadcast Navigation Bar */}
       {/* ------------------------------------------------------------------------- */}
-      <header className="relative z-30 w-full h-14 bg-titanium-950/80 backdrop-blur-md border-b border-white/10 px-4 flex items-center justify-between">
+      <header className="relative z-30 w-full h-14 bg-titanium-950/80 backdrop-blur-md border-b border-white/10 px-4 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
         {/* Left: Branding & Status Indicator */}
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center justify-start min-w-0">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center font-mono font-black text-white text-sm shadow-neon-red">
+            <div className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center font-mono font-black text-white text-sm shadow-neon-red flex-shrink-0">
               V
             </div>
-            <div>
+            <div className="min-w-0 hidden sm:block">
               <div className="flex items-center gap-1.5">
-                <span className="font-mono text-sm font-black tracking-widest text-white uppercase">
+                <span className="font-mono text-sm font-black tracking-widest text-white uppercase whitespace-nowrap">
                   VELOCITRACK
                 </span>
                 <span className="text-[10px] font-mono font-extrabold px-1.5 py-0.2 rounded bg-red-600 text-white">
                   F1
                 </span>
               </div>
-              <div className="text-[9px] font-mono text-slate-400 tracking-wider flex items-center gap-1.5">
+              <div className="text-[9px] font-mono text-slate-400 tracking-wider flex items-center gap-1.5 whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 <span>LIVE TELEMETRY</span>
               </div>
@@ -189,12 +206,12 @@ export default function ReplayDashboard() {
           </div>
         </div>
 
-        {/* Center: Active Session Selector Pill (Horizontally Centered) */}
-        {payload && (
-          <div className="hidden md:flex items-center absolute left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
-            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-titanium-900/90 border border-white/10 shadow-lg backdrop-blur-md">
+        {/* Center: Active Session Selector Pill (Strictly Centered, Zero Collision) */}
+        <div className="flex items-center justify-center min-w-0 px-1">
+          {payload && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-titanium-900/90 border border-white/10 shadow-lg backdrop-blur-md max-w-full">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
-              <span className="font-mono text-xs font-bold text-slate-100 tracking-wide">
+              <span className="font-mono text-xs font-bold text-slate-100 tracking-wide truncate max-w-[140px] md:max-w-[200px] lg:max-w-xs">
                 {payload.metadata.year} {payload.metadata.event_name}
               </span>
               <span className="text-slate-500 font-mono text-xs">&bull;</span>
@@ -203,18 +220,19 @@ export default function ReplayDashboard() {
               </span>
               <button
                 onClick={handleOpenPicker}
-                className="ml-1 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600/90 hover:bg-red-500 text-white text-[11px] font-mono font-bold tracking-wider transition shadow-sm"
+                className="ml-1 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600/90 hover:bg-red-500 text-white text-[11px] font-mono font-bold tracking-wider transition shadow-sm whitespace-nowrap flex-shrink-0"
                 title="Change Grand Prix Session"
               >
                 <SlidersHorizontal className="w-3 h-3" />
-                <span>CHANGE SESSION</span>
+                <span className="hidden md:inline">CHANGE SESSION</span>
+                <span className="md:hidden">CHANGE</span>
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Right: Viewport Toggles & Reset Cluster */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center justify-end min-w-0">
           <ViewModeSelector
             viewportMode={viewportMode}
             cameraMode={cameraMode}
@@ -243,6 +261,8 @@ export default function ReplayDashboard() {
             resetTrigger={resetTrigger}
             isInteractionDisabled={isPickerOpen}
             showDriverLabels={showDriverLabels}
+            zoomPercent={zoomPercent}
+            onZoomChange={handleZoomChange}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center flex-col gap-3 text-slate-400 font-mono text-sm">
@@ -276,7 +296,7 @@ export default function ReplayDashboard() {
           </div>
         )}
 
-        {/* Bottom-Right Floating Stack: Weather Card + Action Strip */}
+        {/* Bottom-Right Floating Stack: Weather Card + Action Strip + Zoom Bar */}
         {payload && (
           <div className="absolute bottom-24 right-4 z-20 pointer-events-auto hidden sm:flex flex-col gap-2 animate-in fade-in duration-200">
             <WeatherWidget weather={playback.currentWeather} />
@@ -285,7 +305,7 @@ export default function ReplayDashboard() {
             <div className="w-64 backdrop-blur-md bg-black/60 border border-white/10 rounded-lg p-1.5 shadow-2xl flex items-center justify-between gap-1.5 select-none font-mono text-xs">
               <button
                 onClick={() => setShowDriverLabels((prev) => !prev)}
-                title={showDriverLabels ? "Hide 3D/2D Driver Name Tags" : "Show 3D/2D Driver Name Tags"}
+                title={showDriverLabels ? "Hide 3D/2D Driver Labels" : "Show 3D/2D Driver Labels"}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md font-bold text-[11px] transition border ${
                   showDriverLabels
                     ? "bg-white/15 text-white border-white/20 shadow-sm"
@@ -293,7 +313,7 @@ export default function ReplayDashboard() {
                 }`}
               >
                 <Tag className={`w-3.5 h-3.5 ${showDriverLabels ? "text-emerald-400" : "text-slate-500"}`} />
-                <span>TAGS</span>
+                <span>LABELS</span>
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
                     showDriverLabels ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-slate-600"
@@ -303,12 +323,60 @@ export default function ReplayDashboard() {
 
               <button
                 onClick={() => setSpeedUnit((prev) => (prev === "kmh" ? "mph" : "kmh"))}
-                title="Toggle speed unit between km/h and mph"
+                title="Toggle speed between KMPH and MPH"
                 className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-black/30 hover:bg-white/10 text-slate-200 hover:text-white border border-white/5 font-bold text-[11px] transition"
               >
                 <Gauge className="w-3.5 h-3.5 text-amber-400" />
-                <span>UNIT: {speedUnit.toUpperCase()}</span>
+                <span>{speedUnit === "kmh" ? "KMPH" : "MPH"}</span>
               </button>
+            </div>
+
+            {/* Docked Zoom Bar Card */}
+            <div className="w-64 backdrop-blur-md bg-black/60 border border-white/10 rounded-lg p-2 shadow-2xl flex flex-col gap-1.5 select-none font-mono text-xs group">
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                <span className="flex items-center gap-1.5">
+                  <ZoomIn className="w-3 h-3 text-sky-400" />
+                  <span>ZOOM</span>
+                </span>
+                {/* Standard Zoom Numbers shown clearly on the bar */}
+                <span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 text-white font-mono text-[10px] tracking-normal transition-all group-hover:bg-sky-500/20 group-hover:border-sky-400/40 group-hover:text-sky-300">
+                  {Math.round(zoomPercent)}%
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Zoom Out Button (-) */}
+                <button
+                  onClick={handleZoomOut}
+                  title="Zoom Out (-)"
+                  className="w-6 h-6 rounded flex items-center justify-center bg-black/40 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition flex-shrink-0"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Interactive Zoom Slider */}
+                <div className="relative flex-1 flex items-center">
+                  <input
+                    type="range"
+                    min={30}
+                    max={300}
+                    step={5}
+                    value={zoomPercent}
+                    onChange={(e) => handleZoomChange(Number(e.target.value))}
+                    title={`Current Zoom: ${Math.round(zoomPercent)}%`}
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400 focus:outline-none transition-colors"
+                  />
+                </div>
+
+                {/* Zoom In Button (+) */}
+                <button
+                  onClick={handleZoomIn}
+                  title="Zoom In (+)"
+                  className="w-6 h-6 rounded flex items-center justify-center bg-black/40 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition flex-shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         )}

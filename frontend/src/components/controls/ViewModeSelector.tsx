@@ -32,8 +32,9 @@ export function ViewModeSelector({
           }`}
           title="3D Cinematic Orbit / Chase Track"
         >
-          <Box className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="hidden sm:inline">3D VIEW</span>
+          <Box className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+          <span className="hidden xl:inline">3D VIEW</span>
+          <span className="xl:hidden inline text-[11px]">3D</span>
         </button>
         <button
           onClick={() => onToggleViewportMode("2d")}
@@ -44,8 +45,9 @@ export function ViewModeSelector({
           }`}
           title="2D Tactical Radar Map"
         >
-          <Map className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="hidden sm:inline">2D RADAR</span>
+          <Map className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+          <span className="hidden xl:inline">2D RADAR</span>
+          <span className="xl:hidden inline text-[11px]">2D</span>
         </button>
       </div>
 
@@ -61,8 +63,8 @@ export function ViewModeSelector({
             }`}
             title="Free Orbit Camera"
           >
-            <Eye className="w-3.5 h-3.5 text-slate-300" />
-            <span className="hidden sm:inline">ORBIT</span>
+            <Eye className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+            <span className="inline text-[11px]">ORBIT</span>
           </button>
           <button
             onClick={() => onToggleCameraMode("chase")}
@@ -73,8 +75,8 @@ export function ViewModeSelector({
             }`}
             title="Chase Cam Driver Lock"
           >
-            <Target className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">CHASE</span>
+            <Target className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="inline text-[11px]">CHASE</span>
           </button>
         </div>
       )}
@@ -84,11 +86,11 @@ export function ViewModeSelector({
         <button
           onClick={onResetCamera}
           title="Exit Driver Chase Cam (Esc)"
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600/25 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/40 text-xs font-mono font-bold tracking-wider transition shadow-sm group animate-in fade-in duration-150"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600/25 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/40 text-xs font-mono font-bold tracking-wider transition shadow-sm group animate-in fade-in duration-150 flex-shrink-0"
         >
-          <CameraOff className="w-3.5 h-3.5 text-red-400 group-hover:text-white transition" />
-          <span className="hidden md:inline">RESET VIEW</span>
-          <kbd className="hidden lg:inline px-1 py-0.2 rounded bg-black/40 border border-white/10 text-[9px] text-slate-400 font-mono">
+          <CameraOff className="w-3.5 h-3.5 text-red-400 group-hover:text-white transition flex-shrink-0" />
+          <span className="whitespace-nowrap text-[11px]">RESET VIEW</span>
+          <kbd className="hidden 2xl:inline px-1 py-0.2 rounded bg-black/40 border border-white/10 text-[9px] text-slate-400 font-mono">
             ESC
           </kbd>
         </button>
