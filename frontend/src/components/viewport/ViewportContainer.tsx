@@ -28,6 +28,9 @@ interface ViewportContainerProps {
   showDriverLabels?: boolean;
   zoomPercent?: number;
   onZoomChange?: (zoom: number) => void;
+  rotate2DTrigger?: number;
+  resetRotation2DTrigger?: number;
+  onRotation2DChange?: (deg: number) => void;
 }
 
 export function ViewportContainer({
@@ -44,6 +47,9 @@ export function ViewportContainer({
   showDriverLabels = true,
   zoomPercent,
   onZoomChange,
+  rotate2DTrigger = 0,
+  resetRotation2DTrigger = 0,
+  onRotation2DChange,
 }: ViewportContainerProps) {
   const [hasWebGL, setHasWebGL] = useState<boolean>(true);
 
@@ -97,6 +103,9 @@ export function ViewportContainer({
         showDriverLabels={showDriverLabels}
         zoomPercent={zoomPercent}
         onZoomChange={onZoomChange}
+        rotateTrigger={rotate2DTrigger}
+        resetRotationTrigger={resetRotation2DTrigger}
+        onRotationChange={onRotation2DChange}
       />
     );
   }

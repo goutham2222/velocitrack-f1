@@ -87,6 +87,18 @@ def build_replay_payload_from_session(
         from app.services.fastf1_client import extract_circuit_turns
         turns: List[TurnMarker] = extract_circuit_turns(session, scale=scale)
 
+        # Ensure corner elevations match actual track surface elevation (eliminating underground markers)
+        if turns and centerline:
+            for turn in turns:
+                best_dist_sq = float("inf")
+                matched_z = 0.0
+                for pt in centerline:
+                    dist_sq = (pt[0] - turn.x) ** 2 + (pt[1] - turn.y) ** 2
+                    if dist_sq < best_dist_sq:
+                        best_dist_sq = dist_sq
+                        matched_z = pt[2]
+                turn.z = round(matched_z, 2)
+
         sectors = [
             SectorBoundary(sector=1, start_distance=0.0, end_distance=total_track_length * 0.33),
             SectorBoundary(sector=2, start_distance=total_track_length * 0.33, end_distance=total_track_length * 0.67),

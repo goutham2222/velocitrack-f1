@@ -137,56 +137,117 @@ export function Track3D({ circuit }: Track3DProps) {
         </mesh>
       )}
 
-      {/* Start / Finish Line */}
-      {centerlinePoints.length > 0 && (
-        <group position={[centerlinePoints[0].x, centerlinePoints[0].y + 0.1, centerlinePoints[0].z]}>
-          <mesh rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[14, 2]} />
-            <meshBasicMaterial color="#FFFFFF" />
-          </mesh>
-          <Html position={[0, 8, 0]} center distanceFactor={120} zIndexRange={[100, 0]}>
-            <div className="px-2 py-0.5 rounded bg-black/80 border border-white/40 text-[10px] font-mono font-bold tracking-widest text-white shadow-lg pointer-events-none">
-              START / FINISH
-            </div>
-          </Html>
-        </group>
-      )}
+      {/* High-Visibility Start / Finish Line & Illuminated Overhead Gantry */}
+      {centerlinePoints.length > 1 && (() => {
+        const p0 = centerlinePoints[0];
+        const p1 = centerlinePoints[1];
+        const tangent = new THREE.Vector3().subVectors(p1, p0).normalize();
+        const angleY = Math.atan2(tangent.x, tangent.z);
+        const trackHalfWidth = 8.5;
+        const gantryHeight = 11.0;
 
-      {/* Elevated Turn Markers with Non-Clipping Badges */}
+        return (
+          <group position={[p0.x, p0.y, p0.z]} rotation={[0, angleY, 0]}>
+            {/* Checkered Road Finish Line */}
+            <mesh position={[0, 0.22, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={5}>
+              <planeGeometry args={[16, 2.4]} />
+              <meshBasicMaterial color="#FFFFFF" depthTest={true} />
+            </mesh>
+            <mesh position={[0, 0.24, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={6}>
+              <planeGeometry args={[15.6, 0.5]} />
+              <meshBasicMaterial color="#E10600" depthTest={true} />
+            </mesh>
+
+            {/* Overhead Gantry: Left Pillar */}
+            <mesh position={[-trackHalfWidth - 1.5, gantryHeight / 2, 0]}>
+              <boxGeometry args={[0.8, gantryHeight, 0.8]} />
+              <meshStandardMaterial color="#334155" metalness={0.8} roughness={0.3} />
+            </mesh>
+
+            {/* Overhead Gantry: Right Pillar */}
+            <mesh position={[trackHalfWidth + 1.5, gantryHeight / 2, 0]}>
+              <boxGeometry args={[0.8, gantryHeight, 0.8]} />
+              <meshStandardMaterial color="#334155" metalness={0.8} roughness={0.3} />
+            </mesh>
+
+            {/* Overhead Crossbar Truss */}
+            <mesh position={[0, gantryHeight, 0]}>
+              <boxGeometry args={[trackHalfWidth * 2 + 4, 1.2, 1.6]} />
+              <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
+            </mesh>
+
+            {/* 5 FIA Starting Lights (Glowing Neon Red) */}
+            {[-4, -2, 0, 2, 4].map((xOff, idx) => (
+              <mesh
+                key={`start-light-${idx}`}
+                position={[xOff, gantryHeight - 1.2, 0.9]}
+                rotation={[Math.PI / 2, 0, 0]}
+              >
+                <cylinderGeometry args={[0.4, 0.4, 0.3, 16]} />
+                <meshBasicMaterial color="#ef4444" />
+              </mesh>
+            ))}
+
+            {/* Overhead Illuminated START / FINISH Sign */}
+            <Html position={[0, gantryHeight + 2.5, 0]} center distanceFactor={140} zIndexRange={[100, 0]}>
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded bg-black/90 border-2 border-red-500 text-[11px] font-mono font-black tracking-widest text-white shadow-[0_0_15px_rgba(239,68,68,0.7)] pointer-events-none select-none whitespace-nowrap">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span>START / FINISH</span>
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              </div>
+            </Html>
+          </group>
+        );
+      })()}
+
+      {/* Elevated Turn Markers with True Track Surface Y Lookup */}
       {circuit.turns.map((turn) => {
-        const surfaceY = turn.z || 0.1;
-        const elevatedY = surfaceY + 12.0; // Elevate +Y units above track surface to eliminate clipping
+        // Dynamically find nearest track centerline vertex height so markers NEVER sink underground
+        let closestY = 0;
+        let minDistSq = Infinity;
+        for (let i = 0; i < centerlinePoints.length; i++) {
+          const cp = centerlinePoints[i];
+          const dSq = (cp.x - turn.x) ** 2 + (cp.z - turn.y) ** 2;
+          if (dSq < minDistSq) {
+            minDistSq = dSq;
+            closestY = cp.y;
+          }
+        }
+        const surfaceY = minDistSq < 60000 ? closestY : (turn.z || 0.1);
+        const elevatedY = surfaceY + 15.0; // Consistently elevated 15m above true asphalt surface
+        const pinHeight = 14.0;
+
         return (
           <group
             key={`turn-${turn.number}-${turn.name || ""}`}
             position={[turn.x, elevatedY, turn.y]}
           >
-            {/* Vertical Marker Guide Pin to Track Surface */}
-            <mesh position={[0, -5.5, 0]} renderOrder={2}>
-              <cylinderGeometry args={[0.15, 0.15, 11, 8]} />
+            {/* Vertical Marker Guide Pin down to Track Surface */}
+            <mesh position={[0, -pinHeight / 2, 0]} renderOrder={2}>
+              <cylinderGeometry args={[0.2, 0.2, pinHeight, 8]} />
               <meshBasicMaterial
                 color="#0284c7"
                 transparent
-                opacity={0.45}
+                opacity={0.5}
                 depthTest={false}
               />
             </mesh>
 
             {/* Glowing Turn Apex Anchor Dot */}
             <mesh position={[0, 0, 0]} renderOrder={3}>
-              <sphereGeometry args={[0.7, 16, 16]} />
+              <sphereGeometry args={[0.8, 16, 16]} />
               <meshBasicMaterial color="#38bdf8" depthTest={false} />
             </mesh>
 
             {/* Floating Elevated Turn Badge */}
             <Html
-              position={[0, 1.8, 0]}
+              position={[0, 2.0, 0]}
               center
               distanceFactor={135}
               zIndexRange={[100, 0]}
             >
               <div className="flex flex-col items-center pointer-events-none select-none">
-                <div className="w-6 h-6 rounded-full bg-slate-950/95 border-2 border-sky-400 text-[11px] font-mono font-black text-sky-200 flex items-center justify-center shadow-[0_0_10px_rgba(56,189,248,0.6)]">
+                <div className="w-6 h-6 rounded-full bg-slate-950/95 border-2 border-sky-400 text-[11px] font-mono font-black text-sky-200 flex items-center justify-center shadow-[0_0_12px_rgba(56,189,248,0.7)]">
                   {turn.number}
                 </div>
                 {turn.name && turn.name !== `Turn ${turn.number}` && (

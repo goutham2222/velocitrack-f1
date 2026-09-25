@@ -2,7 +2,6 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { CircuitGeometry, InterpolatedDriverState } from "@/types/telemetry";
-import { ZoomIn, ZoomOut, Compass, RotateCw } from "lucide-react";
 
 interface Track2DProps {
   circuit: CircuitGeometry;
@@ -14,6 +13,9 @@ interface Track2DProps {
   showDriverLabels?: boolean;
   zoomPercent?: number;
   onZoomChange?: (zoom: number) => void;
+  rotateTrigger?: number;
+  resetRotationTrigger?: number;
+  onRotationChange?: (deg: number) => void;
 }
 
 export function Track2D({
@@ -26,6 +28,9 @@ export function Track2D({
   showDriverLabels = true,
   zoomPercent,
   onZoomChange,
+  rotateTrigger = 0,
+  resetRotationTrigger = 0,
+  onRotationChange,
 }: Track2DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -39,12 +44,16 @@ export function Track2D({
 
   // Synchronize callbacks and external zoom props
   const onZoomChangeRef = useRef(onZoomChange);
+  const onRotationChangeRef = useRef(onRotationChange);
   useEffect(() => {
     onZoomChangeRef.current = onZoomChange;
-  }, [onZoomChange]);
+    onRotationChangeRef.current = onRotationChange;
+  }, [onZoomChange, onRotationChange]);
 
   const lastExternalZoomRef = useRef<number | undefined>(zoomPercent);
   const isInternalZoomRef = useRef<boolean>(false);
+  const lastRotateTriggerRef = useRef<number>(rotateTrigger);
+  const lastResetRotationTriggerRef = useRef<number>(resetRotationTrigger);
 
   // Mouse interaction state refs
   const isDraggingRef = useRef<boolean>(false);
@@ -53,9 +62,25 @@ export function Track2D({
   const clickStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const lastMouseAngleRef = useRef<number>(0);
 
-  // Reactive state for HUD overlay display (angle and zoom)
+  // Reactive state for bottom status display
   const [hudRotationDeg, setHudRotationDeg] = useState<number>(0);
   const [hudScalePercent, setHudScalePercent] = useState<number>(100);
+
+  // External Rotate Trigger (from Zoom & Navigation Bar)
+  useEffect(() => {
+    if (rotateTrigger !== lastRotateTriggerRef.current) {
+      lastRotateTriggerRef.current = rotateTrigger;
+      targetRotationRef.current += Math.PI / 4;
+    }
+  }, [rotateTrigger]);
+
+  // External Reset Rotation Trigger (from Zoom & Navigation Bar)
+  useEffect(() => {
+    if (resetRotationTrigger !== lastResetRotationTriggerRef.current) {
+      lastResetRotationTriggerRef.current = resetRotationTrigger;
+      targetRotationRef.current = 0;
+    }
+  }, [resetRotationTrigger]);
 
   // Compute track bounds for auto-centering
   const bounds = React.useMemo(() => {
@@ -245,20 +270,6 @@ export function Track2D({
     }
   };
 
-  const resetView = useCallback(() => {
-    targetScaleRef.current = 0.9;
-    targetOffsetRef.current = { x: 0, y: 0 };
-    targetRotationRef.current = 0;
-    isInternalZoomRef.current = true;
-    if (onZoomChangeRef.current) {
-      onZoomChangeRef.current(100);
-    }
-  }, []);
-
-  const rotate90 = useCallback(() => {
-    targetRotationRef.current += Math.PI / 4;
-  }, []);
-
   // 60 FPS Render loop with smooth interpolation
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -277,12 +288,16 @@ export function Track2D({
       currentOffsetRef.current.y += (targetOffsetRef.current.y - currentOffsetRef.current.y) * lerpFactor;
       currentRotationRef.current += (targetRotationRef.current - currentRotationRef.current) * lerpFactor;
 
-      // Periodically update HUD state without causing re-render storms
+      // Periodically update HUD state and parent compass angle
       frameCount++;
-      if (frameCount % 6 === 0) {
+      if (frameCount % 4 === 0) {
         const deg = Math.round(((-currentRotationRef.current * 180) / Math.PI) % 360);
-        setHudRotationDeg(deg < 0 ? deg + 360 : deg);
+        const normalizedDeg = deg < 0 ? deg + 360 : deg;
+        setHudRotationDeg(normalizedDeg);
         setHudScalePercent(Math.round((currentScaleRef.current / 0.9) * 100));
+        if (onRotationChangeRef.current) {
+          onRotationChangeRef.current(normalizedDeg);
+        }
       }
 
       const width = canvas.clientWidth;
@@ -294,7 +309,7 @@ export function Track2D({
 
       ctx.clearRect(0, 0, width, height);
 
-      // Background grid
+      // Clean, dark broadcast-grade background (removed awkward grid lines)
       ctx.fillStyle = "#0b0e14";
       ctx.fillRect(0, 0, width, height);
 
@@ -310,23 +325,6 @@ export function Track2D({
         Math.min(width / bounds.width, height / bounds.height) * 0.75 * currentScaleRef.current;
       ctx.scale(fitScale, -fitScale); // Invert Y to match Cartesian
       ctx.translate(-bounds.centerX, -bounds.centerY);
-
-      // Draw Grid Lines in world space
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
-      ctx.lineWidth = 1 / fitScale;
-      const gridStep = 50;
-      for (let x = bounds.minX - 100; x <= bounds.maxX + 100; x += gridStep) {
-        ctx.beginPath();
-        ctx.moveTo(x, bounds.minY - 100);
-        ctx.lineTo(x, bounds.maxY + 100);
-        ctx.stroke();
-      }
-      for (let y = bounds.minY - 100; y <= bounds.maxY + 100; y += gridStep) {
-        ctx.beginPath();
-        ctx.moveTo(bounds.minX - 100, y);
-        ctx.lineTo(bounds.maxX + 100, y);
-        ctx.stroke();
-      }
 
       // Draw Track Underlay (Glow)
       if (circuit.centerline.length > 2) {
@@ -347,10 +345,48 @@ export function Track2D({
         ctx.lineWidth = 4;
         ctx.stroke();
 
-        // Start / Finish Line
-        const startPt = circuit.centerline[0];
+        // Prominent High-Visibility Start / Finish Line
+        const p0 = circuit.centerline[0];
+        const p1 = circuit.centerline[1] || p0;
+        const dx = p1[0] - p0[0];
+        const dy = p1[1] - p0[1];
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        const halfWidth = 10;
+
+        // Checkered base line across the road
+        ctx.lineWidth = 4.5;
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.beginPath();
+        ctx.moveTo(p0[0] - nx * halfWidth, p0[1] - ny * halfWidth);
+        ctx.lineTo(p0[0] + nx * halfWidth, p0[1] + ny * halfWidth);
+        ctx.stroke();
+
+        ctx.lineWidth = 2.0;
+        ctx.strokeStyle = "#E10600";
+        ctx.beginPath();
+        ctx.moveTo(p0[0] - nx * halfWidth, p0[1] - ny * halfWidth);
+        ctx.lineTo(p0[0] + nx * halfWidth, p0[1] + ny * halfWidth);
+        ctx.stroke();
+
+        // START / FINISH Badge
+        ctx.save();
+        ctx.translate(p0[0], p0[1]);
+        ctx.scale(1 / fitScale, -1 / fitScale);
+        ctx.rotate(-currentRotationRef.current);
+        ctx.fillStyle = "rgba(225, 6, 0, 0.95)";
+        ctx.beginPath();
+        ctx.roundRect(-24, -20, 48, 14, 3);
+        ctx.fill();
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1;
+        ctx.stroke();
         ctx.fillStyle = "#FFFFFF";
-        ctx.fillRect(startPt[0] - 2, startPt[1] - 8, 4, 16);
+        ctx.font = "bold 8px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("START / FIN", 0, -10);
+        ctx.restore();
       }
 
       // Draw Turn Markers (Upright with Counter-Rotation)
@@ -445,57 +481,7 @@ export function Track2D({
         onMouseLeave={handleMouseUp}
       />
 
-      {/* 2D Viewport Overlay HUD Controls (Zoom In/Out, Circular Rotate, Compass Reset) */}
-      <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-titanium-900/80 backdrop-blur-md border border-white/10 rounded-lg p-1.5 shadow-xl select-none font-mono">
-        <button
-          onClick={() => {
-            targetScaleRef.current = Math.min(6.0, targetScaleRef.current * 1.25);
-            isInternalZoomRef.current = true;
-            if (onZoomChangeRef.current) {
-              onZoomChangeRef.current(Math.round((targetScaleRef.current / 0.9) * 100));
-            }
-          }}
-          title="Zoom In"
-          className="p-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => {
-            targetScaleRef.current = Math.max(0.3, targetScaleRef.current * 0.8);
-            isInternalZoomRef.current = true;
-            if (onZoomChangeRef.current) {
-              onZoomChangeRef.current(Math.round((targetScaleRef.current / 0.9) * 100));
-            }
-          }}
-          title="Zoom Out"
-          className="p-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        <button
-          onClick={rotate90}
-          title="Rotate 45° Clockwise"
-          className="p-1.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition"
-        >
-          <RotateCw className="w-4 h-4" />
-        </button>
-        {/* Interactive Circular Compass Widget (Click to Reset North 0°) */}
-        <button
-          onClick={resetView}
-          title={`Heading: ${hudRotationDeg}° • Click to Reset North & Zoom • Right-Click drag on map to rotate`}
-          className="relative flex items-center justify-center w-7 h-7 rounded-full bg-black/50 border border-white/15 hover:border-sky-400 text-slate-300 hover:text-white transition group"
-        >
-          <Compass
-            className="w-4 h-4 text-sky-400 transition-transform duration-75"
-            style={{ transform: `rotate(${-hudRotationDeg}deg)` }}
-          />
-          <span className="absolute -top-1 text-[8px] font-black text-rose-500 pointer-events-none">
-            N
-          </span>
-        </button>
-      </div>
-
+      {/* Clean Bottom Tactical Radar Badge */}
       <div className="absolute bottom-4 left-4 text-[10px] font-mono text-slate-400 uppercase tracking-widest bg-titanium-950/80 backdrop-blur-md px-2.5 py-1 rounded border border-white/10 pointer-events-none flex items-center gap-2">
         <span>2D RADAR</span>
         <span className="text-slate-600">&bull;</span>

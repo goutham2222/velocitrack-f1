@@ -24,6 +24,10 @@ import {
   Minus,
   Plus,
   ZoomIn,
+  Maximize,
+  Minimize,
+  RotateCw,
+  Compass,
 } from "lucide-react";
 
 export default function ReplayDashboard() {
@@ -39,6 +43,26 @@ export default function ReplayDashboard() {
   const [speedUnit, setSpeedUnit] = useState<SpeedUnit>("kmh");
   const [showDriverLabels, setShowDriverLabels] = useState<boolean>(true);
   const [zoomPercent, setZoomPercent] = useState<number>(100);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [rotate2DTrigger, setRotate2DTrigger] = useState<number>(0);
+  const [resetRotation2DTrigger, setResetRotation2DTrigger] = useState<number>(0);
+  const [rotationDeg2D, setRotationDeg2D] = useState<number>(0);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const handleToggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
 
   const handleZoomIn = useCallback(() => {
     setZoomPercent((prev) => Math.min(300, prev + 15));
@@ -88,6 +112,7 @@ export default function ReplayDashboard() {
     setCameraMode("orbit");
     setResetTrigger((prev) => prev + 1);
     setZoomPercent(100);
+    setResetRotation2DTrigger((prev) => prev + 1);
   }, [playback]);
 
   const handleSelectDriver = useCallback(
@@ -231,8 +256,8 @@ export default function ReplayDashboard() {
           )}
         </div>
 
-        {/* Right: Viewport Toggles & Reset Cluster */}
-        <div className="flex items-center justify-end min-w-0">
+        {/* Right: Viewport Toggles, Fullscreen & Reset Cluster */}
+        <div className="flex items-center justify-end gap-2 min-w-0">
           <ViewModeSelector
             viewportMode={viewportMode}
             cameraMode={cameraMode}
@@ -241,6 +266,19 @@ export default function ReplayDashboard() {
             onToggleCameraMode={setCameraMode}
             onResetCamera={handleResetCamera}
           />
+
+          {/* Broadcast Fullscreen Toggle Button */}
+          <button
+            onClick={handleToggleFullscreen}
+            title={isFullscreen ? "Exit Fullscreen (Esc)" : "Enter Fullscreen"}
+            className="flex items-center justify-center p-2 rounded-xl bg-titanium-900/80 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition shadow-lg flex-shrink-0 group"
+          >
+            {isFullscreen ? (
+              <Minimize className="w-4 h-4 text-slate-300 group-hover:text-white" />
+            ) : (
+              <Maximize className="w-4 h-4 text-slate-300 group-hover:text-white" />
+            )}
+          </button>
         </div>
       </header>
 
@@ -263,6 +301,9 @@ export default function ReplayDashboard() {
             showDriverLabels={showDriverLabels}
             zoomPercent={zoomPercent}
             onZoomChange={handleZoomChange}
+            rotate2DTrigger={rotate2DTrigger}
+            resetRotation2DTrigger={resetRotation2DTrigger}
+            onRotation2DChange={setRotationDeg2D}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center flex-col gap-3 text-slate-400 font-mono text-sm">
@@ -296,9 +337,9 @@ export default function ReplayDashboard() {
           </div>
         )}
 
-        {/* Bottom-Right Floating Stack: Weather Card + Action Strip + Zoom Bar */}
+        {/* Bottom-Right Floating Stack: Weather Card + Action Strip + Zoom Bar (Beside Playback Layout) */}
         {payload && (
-          <div className="absolute bottom-24 right-4 z-20 pointer-events-auto hidden sm:flex flex-col gap-2 animate-in fade-in duration-200">
+          <div className="absolute bottom-5 right-4 z-20 pointer-events-auto hidden sm:flex flex-col gap-2 animate-in fade-in duration-200">
             <WeatherWidget weather={playback.currentWeather} />
 
             {/* Docked Action Strip: Driver Labels & Speed Unit */}
@@ -331,13 +372,41 @@ export default function ReplayDashboard() {
               </button>
             </div>
 
-            {/* Docked Zoom Bar Card */}
+            {/* Docked Zoom & Navigation Bar */}
             <div className="w-64 backdrop-blur-md bg-black/60 border border-white/10 rounded-lg p-2 shadow-2xl flex flex-col gap-1.5 select-none font-mono text-xs group">
               <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                <span className="flex items-center gap-1.5">
-                  <ZoomIn className="w-3 h-3 text-sky-400" />
+                <div className="flex items-center gap-1.5">
+                  <ZoomIn className="w-3.5 h-3.5 text-sky-400" />
                   <span>ZOOM</span>
-                </span>
+                </div>
+
+                {/* 2D Compass & Rotate Controls Integrated into Zoom Bar */}
+                {viewportMode === "2d" && (
+                  <div className="flex items-center gap-1 bg-black/50 rounded px-1.5 py-0.5 border border-white/10">
+                    <button
+                      onClick={() => setRotate2DTrigger((prev) => prev + 1)}
+                      title="Rotate 45° Clockwise"
+                      className="p-0.5 hover:bg-white/15 text-slate-300 hover:text-white rounded transition"
+                    >
+                      <RotateCw className="w-3 h-3 text-sky-400" />
+                    </button>
+                    <button
+                      onClick={() => setResetRotation2DTrigger((prev) => prev + 1)}
+                      title={`Heading: ${rotationDeg2D}° • Click to Reset North (0°)`}
+                      className="relative p-0.5 hover:bg-white/15 text-slate-300 hover:text-white rounded transition flex items-center justify-center"
+                    >
+                      <Compass
+                        className="w-3.5 h-3.5 text-sky-400 transition-transform duration-75"
+                        style={{ transform: `rotate(${-rotationDeg2D}deg)` }}
+                      />
+                      <span className="absolute -top-0.5 text-[7px] font-black text-rose-500 pointer-events-none">
+                        N
+                      </span>
+                    </button>
+                    <span className="text-[9px] text-sky-300 font-bold ml-0.5">{rotationDeg2D}°</span>
+                  </div>
+                )}
+
                 {/* Standard Zoom Numbers shown clearly on the bar */}
                 <span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 text-white font-mono text-[10px] tracking-normal transition-all group-hover:bg-sky-500/20 group-hover:border-sky-400/40 group-hover:text-sky-300">
                   {Math.round(zoomPercent)}%
