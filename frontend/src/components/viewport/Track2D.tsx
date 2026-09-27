@@ -62,10 +62,6 @@ export function Track2D({
   const clickStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const lastMouseAngleRef = useRef<number>(0);
 
-  // Reactive state for bottom status display
-  const [hudRotationDeg, setHudRotationDeg] = useState<number>(0);
-  const [hudScalePercent, setHudScalePercent] = useState<number>(100);
-
   // External Rotate Trigger (from Zoom & Navigation Bar)
   useEffect(() => {
     if (rotateTrigger !== lastRotateTriggerRef.current) {
@@ -288,13 +284,11 @@ export function Track2D({
       currentOffsetRef.current.y += (targetOffsetRef.current.y - currentOffsetRef.current.y) * lerpFactor;
       currentRotationRef.current += (targetRotationRef.current - currentRotationRef.current) * lerpFactor;
 
-      // Periodically update HUD state and parent compass angle
+      // Periodically update parent compass angle
       frameCount++;
       if (frameCount % 4 === 0) {
         const deg = Math.round(((-currentRotationRef.current * 180) / Math.PI) % 360);
         const normalizedDeg = deg < 0 ? deg + 360 : deg;
-        setHudRotationDeg(normalizedDeg);
-        setHudScalePercent(Math.round((currentScaleRef.current / 0.9) * 100));
         if (onRotationChangeRef.current) {
           onRotationChangeRef.current(normalizedDeg);
         }
@@ -480,16 +474,6 @@ export function Track2D({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       />
-
-      {/* Clean Bottom Tactical Radar Badge */}
-      <div className="absolute bottom-4 left-4 text-[10px] font-mono text-slate-400 uppercase tracking-widest bg-titanium-950/80 backdrop-blur-md px-2.5 py-1 rounded border border-white/10 pointer-events-none flex items-center gap-2">
-        <span>2D RADAR</span>
-        <span className="text-slate-600">&bull;</span>
-        <span>ZOOM: {hudScalePercent}%</span>
-        <span className="text-slate-600">&bull;</span>
-        <span className="text-sky-400">{hudRotationDeg}°</span>
-        <span className="text-[9px] text-slate-500 normal-case">(Right-Click + Drag to Rotate)</span>
-      </div>
     </div>
   );
 }

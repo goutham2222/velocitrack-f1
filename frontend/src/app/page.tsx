@@ -23,7 +23,6 @@ import {
   Gauge,
   Minus,
   Plus,
-  ZoomIn,
   Maximize,
   Minimize,
   RotateCw,
@@ -337,52 +336,47 @@ export default function ReplayDashboard() {
           </div>
         )}
 
-        {/* Bottom-Right Floating Stack: Weather Card + Action Strip + Zoom Bar (Beside Playback Layout) */}
+        {/* Bottom-Right Floating Stack: Collapsible Weather Card + Compact Map-Control Pill */}
         {payload && (
-          <div className="absolute bottom-5 right-4 z-20 pointer-events-auto hidden sm:flex flex-col gap-2 animate-in fade-in duration-200">
+          <div className="absolute bottom-5 right-4 z-30 pointer-events-auto hidden sm:flex flex-col gap-2 animate-in fade-in duration-200">
             <WeatherWidget weather={playback.currentWeather} />
 
-            {/* Docked Action Strip: Driver Labels & Speed Unit */}
-            <div className="w-64 backdrop-blur-md bg-black/60 border border-white/10 rounded-lg p-1.5 shadow-2xl flex items-center justify-between gap-1.5 select-none font-mono text-xs">
-              <button
-                onClick={() => setShowDriverLabels((prev) => !prev)}
-                title={showDriverLabels ? "Hide 3D/2D Driver Labels" : "Show 3D/2D Driver Labels"}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md font-bold text-[11px] transition border ${
-                  showDriverLabels
-                    ? "bg-white/15 text-white border-white/20 shadow-sm"
-                    : "bg-black/30 text-slate-400 hover:text-slate-200 border-white/5"
-                }`}
-              >
-                <Tag className={`w-3.5 h-3.5 ${showDriverLabels ? "text-emerald-400" : "text-slate-500"}`} />
-                <span>LABELS</span>
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    showDriverLabels ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-slate-600"
-                  }`}
-                />
-              </button>
+            {/* Unified Map-Control Pill: Toggles (Labels, Speed Unit) + 2D Rotate/Compass + Zoom Slider */}
+            <div className="w-64 backdrop-blur-md bg-black/60 border border-white/10 rounded-xl p-2.5 shadow-2xl flex flex-col gap-2 select-none font-mono text-xs group">
+              {/* Row 1: Toggles (Labels & Speed Unit) + 2D Orientation Controls */}
+              <div className="flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  <button
+                    onClick={() => setShowDriverLabels((prev) => !prev)}
+                    title={showDriverLabels ? "Hide 3D/2D Driver Labels" : "Show 3D/2D Driver Labels"}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg font-bold text-[10px] transition border ${
+                      showDriverLabels
+                        ? "bg-white/15 text-white border-white/20 shadow-sm"
+                        : "bg-black/30 text-slate-400 hover:text-slate-200 border-white/5"
+                    }`}
+                  >
+                    <Tag className={`w-3 h-3 ${showDriverLabels ? "text-emerald-400" : "text-slate-500"}`} />
+                    <span>LABELS</span>
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        showDriverLabels ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-slate-600"
+                      }`}
+                    />
+                  </button>
 
-              <button
-                onClick={() => setSpeedUnit((prev) => (prev === "kmh" ? "mph" : "kmh"))}
-                title="Toggle speed between KMPH and MPH"
-                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-black/30 hover:bg-white/10 text-slate-200 hover:text-white border border-white/5 font-bold text-[11px] transition"
-              >
-                <Gauge className="w-3.5 h-3.5 text-amber-400" />
-                <span>{speedUnit === "kmh" ? "KMPH" : "MPH"}</span>
-              </button>
-            </div>
-
-            {/* Docked Zoom & Navigation Bar */}
-            <div className="w-64 backdrop-blur-md bg-black/60 border border-white/10 rounded-lg p-2 shadow-2xl flex flex-col gap-1.5 select-none font-mono text-xs group">
-              <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                <div className="flex items-center gap-1.5">
-                  <ZoomIn className="w-3.5 h-3.5 text-sky-400" />
-                  <span>ZOOM</span>
+                  <button
+                    onClick={() => setSpeedUnit((prev) => (prev === "kmh" ? "mph" : "kmh"))}
+                    title="Toggle speed between KMPH and MPH"
+                    className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-black/30 hover:bg-white/10 text-slate-200 hover:text-white border border-white/5 font-bold text-[10px] transition"
+                  >
+                    <Gauge className="w-3 h-3 text-amber-400" />
+                    <span>{speedUnit === "kmh" ? "KMPH" : "MPH"}</span>
+                  </button>
                 </div>
 
-                {/* 2D Compass & Rotate Controls Integrated into Zoom Bar */}
+                {/* 2D Compass & Rotate Controls Integrated into Pill */}
                 {viewportMode === "2d" && (
-                  <div className="flex items-center gap-1 bg-black/50 rounded px-1.5 py-0.5 border border-white/10">
+                  <div className="flex items-center gap-1 bg-black/40 rounded-lg px-1.5 py-0.5 border border-white/10 flex-shrink-0">
                     <button
                       onClick={() => setRotate2DTrigger((prev) => prev + 1)}
                       title="Rotate 45° Clockwise"
@@ -406,21 +400,17 @@ export default function ReplayDashboard() {
                     <span className="text-[9px] text-sky-300 font-bold ml-0.5">{rotationDeg2D}°</span>
                   </div>
                 )}
-
-                {/* Standard Zoom Numbers shown clearly on the bar */}
-                <span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 text-white font-mono text-[10px] tracking-normal transition-all group-hover:bg-sky-500/20 group-hover:border-sky-400/40 group-hover:text-sky-300">
-                  {Math.round(zoomPercent)}%
-                </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Row 2: Zoom Slider with (-) and (+) and Zoom % Readout */}
+              <div className="flex items-center gap-2 pt-1.5 border-t border-white/5">
                 {/* Zoom Out Button (-) */}
                 <button
                   onClick={handleZoomOut}
                   title="Zoom Out (-)"
-                  className="w-6 h-6 rounded flex items-center justify-center bg-black/40 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition flex-shrink-0"
+                  className="w-5 h-5 rounded flex items-center justify-center bg-black/40 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition flex-shrink-0"
                 >
-                  <Minus className="w-3.5 h-3.5" />
+                  <Minus className="w-3 h-3" />
                 </button>
 
                 {/* Interactive Zoom Slider */}
@@ -441,10 +431,15 @@ export default function ReplayDashboard() {
                 <button
                   onClick={handleZoomIn}
                   title="Zoom In (+)"
-                  className="w-6 h-6 rounded flex items-center justify-center bg-black/40 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition flex-shrink-0"
+                  className="w-5 h-5 rounded flex items-center justify-center bg-black/40 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 transition flex-shrink-0"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-3 h-3" />
                 </button>
+
+                {/* Standard Zoom Numbers Readout */}
+                <span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 text-white font-mono text-[9px] tracking-normal transition-all group-hover:bg-sky-500/20 group-hover:border-sky-400/40 group-hover:text-sky-300 min-w-[34px] text-center flex-shrink-0">
+                  {Math.round(zoomPercent)}%
+                </span>
               </div>
             </div>
           </div>
@@ -452,7 +447,7 @@ export default function ReplayDashboard() {
 
         {/* Bottom Floating Overlay: Playback Scrubber & Controls */}
         {payload && (
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-11/12 max-w-4xl z-20 pointer-events-auto">
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 w-11/12 max-w-4xl z-40 pointer-events-auto">
             <PlaybackControls
               currentTime={playback.currentTime}
               duration={playback.duration}

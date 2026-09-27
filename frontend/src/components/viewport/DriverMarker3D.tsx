@@ -3,13 +3,14 @@
 import React, { useRef } from "react";
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
-import { InterpolatedDriverState } from "@/types/telemetry";
+import { CameraMode, InterpolatedDriverState } from "@/types/telemetry";
 
 interface DriverMarker3DProps {
   driver: InterpolatedDriverState;
   isFocused: boolean;
   onSelect: (code: string) => void;
   showLabels?: boolean;
+  cameraMode?: CameraMode;
 }
 
 export function DriverMarker3D({
@@ -17,8 +18,12 @@ export function DriverMarker3D({
   isFocused,
   onSelect,
   showLabels = true,
+  cameraMode = "orbit",
 }: DriverMarker3DProps) {
   const groupRef = useRef<THREE.Group>(null);
+
+  // In chase cam, suppress the focused car's floating label to prevent cockpit clutter and HUD occlusion
+  const shouldRenderLabel = showLabels && !(isFocused && cameraMode === "chase");
 
   // Position in Three.js coordinates: [x, z + offset, y]
   const pos: [number, number, number] = [
@@ -66,12 +71,12 @@ export function DriverMarker3D({
       </mesh>
 
       {/* Floating Acronym Tag */}
-      {showLabels && (
+      {shouldRenderLabel && (
         <Html
           position={[0, 4.5, 0]}
           center
           distanceFactor={100}
-          zIndexRange={[90, 0]}
+          zIndexRange={[15, 0]}
         >
           <div
             onClick={(e) => {

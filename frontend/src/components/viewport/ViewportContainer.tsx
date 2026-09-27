@@ -168,6 +168,7 @@ export function ViewportContainer({
             isFocused={focusedDriver?.code === drv.code}
             onSelect={onSelectDriver}
             showLabels={showDriverLabels}
+            cameraMode={cameraMode}
           />
         ))}
 
