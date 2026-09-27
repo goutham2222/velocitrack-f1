@@ -201,8 +201,8 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
         # Driver pace factor (Verstappen/Norris slightly faster, backmarkers slightly slower)
         pace_delta = rank * 0.18 + (math.sin(rank * 1.5) * 0.08)
         driver_lap_time = base_lap_time + pace_delta
-        # Initial track position offset at Lap 1 (staggered grid start: ~8m per car)
-        initial_distance_offset = -(rank * 12.0)
+        # Initial track position offset at Lap 1 (staggered grid start: ~8m behind start line + 12m per slot)
+        initial_distance_offset = -8.0 - (rank * 12.0)
 
         # Preallocate arrays
         x_arr = []

@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
+from scipy.spatial import cKDTree
 from app.models.schemas import (
     CircuitGeometry,
     SectorBoundary,
@@ -52,7 +53,31 @@ def build_replay_payload_from_session(
         logger.warning("Session has no laps data, falling back to demo replay")
         return get_demo_replay(sampling_rate=sampling_rate, laps=lap_end - lap_start + 1)
 
-    # 1. Circuit Geometry extraction from fastest lap
+    # 1. Determine Session Time Window for Requested Laps
+    target_laps = laps_df[
+        (laps_df["LapNumber"] >= lap_start) & (laps_df["LapNumber"] <= lap_end)
+    ]
+    if target_laps.empty:
+        target_laps = laps_df[laps_df["LapNumber"] <= 2]
+
+    # Time boundaries in seconds (SessionTime timedelta -> seconds)
+    t_start_delta = target_laps["LapStartTime"].dropna().min()
+    t_end_delta = target_laps["Time"].dropna().max()
+
+    t_start = t_start_delta.total_seconds() if hasattr(t_start_delta, "total_seconds") else 0.0
+    t_end = t_end_delta.total_seconds() if hasattr(t_end_delta, "total_seconds") else (t_start + 180.0)
+
+    duration = max(10.0, t_end - t_start)
+    # Cap single query duration to 400s for bandwidth safety
+    if duration > 400.0:
+        duration = 400.0
+        t_end = t_start + duration
+
+    num_frames = int(duration * sampling_rate)
+    uniform_grid = np.linspace(t_start, t_end, num_frames)
+    timestamps = [round(i * dt, 2) for i in range(num_frames)]
+
+    # 2. Circuit Geometry extraction & Start Line Alignment
     fastest_lap = laps_df.pick_fastest()
     ref_telemetry = None
     if fastest_lap is not None and not fastest_lap.empty:
@@ -62,26 +87,78 @@ def build_replay_payload_from_session(
             logger.warning(f"Failed to get fastest lap telemetry: {e}")
 
     circuit_geometry = None
+    track_tree = None
+    shifted_cum_dist = None
+    total_track_length = 5000.0
+
     if ref_telemetry is not None and "X" in ref_telemetry and "Y" in ref_telemetry:
         raw_x = ref_telemetry["X"].dropna().to_numpy()
         raw_y = ref_telemetry["Y"].dropna().to_numpy()
         raw_z = ref_telemetry["Z"].dropna().to_numpy() if "Z" in ref_telemetry else np.zeros_like(raw_x)
 
-        # Scale coordinates from FastF1 tenths-of-meters to meters if needed
-        # FastF1 coordinates are in 1/10 meters (decimeters)
+        # Scale coordinates from FastF1 tenths-of-meters to meters
         scale = 0.1
-        coords_x = (raw_x * scale).tolist()
-        coords_y = (raw_y * scale).tolist()
-        coords_z = (raw_z * scale).tolist()
+        coords_x = raw_x * scale
+        coords_y = raw_y * scale
+        coords_z = raw_z * scale
 
-        # Decimate for lightweight geometry payload (every 3rd point)
+        # Decimate for lightweight geometry payload (every ~3rd point)
         step = max(1, len(coords_x) // 400)
+        ref_x = coords_x[::step]
+        ref_y = coords_y[::step]
+        ref_z = coords_z[::step]
+
+        # Determine Start Line index: if session starts on Lap 1, align start line to the front of the starting grid
+        start_line_idx = 0
+        l1 = laps_df[laps_df["LapNumber"] == 1]
+        if lap_start == 1 and not l1.empty:
+            try:
+                pole_drv = None
+                for drv in session.drivers:
+                    drv_l1 = l1.pick_driver(drv)
+                    if not drv_l1.empty and drv_l1.iloc[0].get("GridPosition", 0) == 1:
+                        pole_drv = drv
+                        break
+                if pole_drv is None:
+                    pole_drv = session.drivers[0]
+
+                pole_tel = l1.pick_driver(pole_drv).get_telemetry()
+                if not pole_tel.empty and "SessionTime" in pole_tel:
+                    times = pole_tel["SessionTime"].dt.total_seconds().to_numpy()
+                    px = np.interp(t_start, times, pole_tel["X"].to_numpy() * scale)
+                    py = np.interp(t_start, times, pole_tel["Y"].to_numpy() * scale)
+                    dists_sq = (ref_x - px) ** 2 + (ref_y - py) ** 2
+                    pole_idx = int(np.argmin(dists_sq))
+
+                    next_idx = (pole_idx + 1) % len(ref_x)
+                    step_d = float(np.hypot(ref_x[next_idx] - ref_x[pole_idx], ref_y[next_idx] - ref_y[pole_idx]))
+                    # Place start line ~8 meters ahead of pole position
+                    indices_ahead = max(1, int(round(8.0 / max(0.5, step_d))))
+                    start_line_idx = (pole_idx + indices_ahead) % len(ref_x)
+                    logger.info(f"Aligned circuit Start Line: pole_idx={pole_idx}, start_line_idx={start_line_idx}")
+            except Exception as e:
+                logger.warning(f"Failed to align start line to pole position: {e}")
+
+        # Shift centerline points so index 0 is strictly at the Start Line
+        shifted_x = np.roll(ref_x, -start_line_idx)
+        shifted_y = np.roll(ref_y, -start_line_idx)
+        shifted_z = np.roll(ref_z, -start_line_idx)
+
         centerline = [
-            [round(coords_x[i], 2), round(coords_y[i], 2), round(coords_z[i], 2)]
-            for i in range(0, len(coords_x), step)
+            [round(float(shifted_x[i]), 2), round(float(shifted_y[i]), 2), round(float(shifted_z[i]), 2)]
+            for i in range(len(shifted_x))
         ]
 
-        total_track_length = float(ref_telemetry["Distance"].max() if "Distance" in ref_telemetry else 5000.0)
+        # Calculate exact cumulative track distance along shifted centerline
+        dx = np.diff(shifted_x, append=shifted_x[0])
+        dy = np.diff(shifted_y, append=shifted_y[0])
+        dz = np.diff(shifted_z, append=shifted_z[0])
+        seg_lengths = np.sqrt(dx ** 2 + dy ** 2 + dz ** 2)
+        shifted_cum_dist = np.concatenate([[0.0], np.cumsum(seg_lengths)[:-1]])
+        total_track_length = float(shifted_cum_dist[-1] + seg_lengths[-1])
+
+        # Build KDTree on shifted 2D centerline for high-speed projection
+        track_tree = cKDTree(np.column_stack([shifted_x, shifted_y]))
 
         # Corners from FastF1 circuit info
         from app.services.fastf1_client import extract_circuit_turns
@@ -121,34 +198,9 @@ def build_replay_payload_from_session(
             track_length_m=round(total_track_length, 1),
         )
 
-    # 2. Determine Session Time Window for Requested Laps
-    target_laps = laps_df[
-        (laps_df["LapNumber"] >= lap_start) & (laps_df["LapNumber"] <= lap_end)
-    ]
-    if target_laps.empty:
-        target_laps = laps_df[laps_df["LapNumber"] <= 2]
-
-    # Time boundaries in seconds (SessionTime timedelta -> seconds)
-    t_start_delta = target_laps["LapStartTime"].dropna().min()
-    t_end_delta = target_laps["Time"].dropna().max()
-
-    t_start = t_start_delta.total_seconds() if hasattr(t_start_delta, "total_seconds") else 0.0
-    t_end = t_end_delta.total_seconds() if hasattr(t_end_delta, "total_seconds") else (t_start + 180.0)
-
-    duration = max(10.0, t_end - t_start)
-    # Cap single query duration to 300s (5 minutes) for bandwidth safety
-    if duration > 400.0:
-        duration = 400.0
-        t_end = t_start + duration
-
-    num_frames = int(duration * sampling_rate)
-    uniform_grid = np.linspace(t_start, t_end, num_frames)
-    timestamps = [round(i * dt, 2) for i in range(num_frames)]
-
-    # 3. Synchronize drivers
+    # 3. Synchronize drivers & compute monotonic track progress
     drivers_dict: Dict[str, DriverReplayStream] = {}
     participating_drivers = session.drivers
-
     scale = 0.1  # FastF1 decimeters to meters
 
     for drv_id in participating_drivers:
@@ -184,7 +236,6 @@ def build_replay_payload_from_session(
             rpm_raw = drv_telemetry["RPM"].to_numpy() if "RPM" in drv_telemetry else np.zeros_like(tel_times)
             thr_raw = drv_telemetry["Throttle"].to_numpy() if "Throttle" in drv_telemetry else np.zeros_like(tel_times)
             brk_raw = drv_telemetry["Brake"].astype(float).to_numpy() if "Brake" in drv_telemetry else np.zeros_like(tel_times)
-            dist_raw = drv_telemetry["Distance"].to_numpy() if "Distance" in drv_telemetry else np.zeros_like(tel_times)
 
             # Interpolate onto uniform grid
             x_interp = np.interp(uniform_grid, tel_times, x_raw)
@@ -194,7 +245,55 @@ def build_replay_payload_from_session(
             rpm_interp = np.interp(uniform_grid, tel_times, rpm_raw).astype(int)
             thr_interp = np.interp(uniform_grid, tel_times, thr_raw)
             brk_interp = np.interp(uniform_grid, tel_times, brk_raw)
-            dist_interp = np.interp(uniform_grid, tel_times, dist_raw)
+
+            # Compute true circuit track progress via KDTree projection
+            if track_tree is not None and shifted_cum_dist is not None:
+                _, closest_indices = track_tree.query(np.column_stack([x_interp, y_interp]))
+                lap_dist = shifted_cum_dist[closest_indices]
+
+                # Dynamic lap numbers across session time
+                lap_nums = []
+                for t in uniform_grid:
+                    matched_lap = lap_start
+                    for _, r in drv_laps.iterrows():
+                        st = r["LapStartTime"].total_seconds() if pd.notnull(r["LapStartTime"]) else 0
+                        et = r["Time"].total_seconds() if pd.notnull(r["Time"]) else float('inf')
+                        if st <= t <= et:
+                            matched_lap = int(r["LapNumber"])
+                            break
+                    lap_nums.append(matched_lap)
+                lap_nums = np.array(lap_nums)
+
+                # Monotonic race distance calculation
+                track_dist_arr = []
+                has_crossed_start_line = (lap_start > 1)
+
+                for f in range(num_frames):
+                    cur_lap = lap_nums[f]
+                    raw_d = lap_dist[f]
+                    spd = spd_interp[f]
+
+                    if not has_crossed_start_line:
+                        if cur_lap > 1 or (raw_d < total_track_length * 0.35 and spd > 15.0):
+                            has_crossed_start_line = True
+
+                    if not has_crossed_start_line:
+                        # Stationary or lining up on grid behind start line
+                        if raw_d > total_track_length * 0.5:
+                            d_val = raw_d - total_track_length
+                        else:
+                            d_val = raw_d
+                    else:
+                        d_val = (cur_lap - lap_start) * total_track_length + raw_d
+
+                    track_dist_arr.append(round(float(d_val), 1))
+
+                # Handle pit lane starters on lap 1
+                if lap_start == 1 and track_dist_arr[0] > 0 and spd_interp[0] < 5.0:
+                    track_dist_arr[0] = -250.0  # At the back of the starting pack
+            else:
+                track_dist_arr = [0.0] * num_frames
+                lap_nums = [lap_start] * num_frames
 
             # Nearest-neighbor for discrete channels
             gear_raw = drv_telemetry["nGear"].fillna(0).to_numpy() if "nGear" in drv_telemetry else np.ones_like(tel_times)
@@ -225,8 +324,8 @@ def build_replay_payload_from_session(
                 throttle=[round(float(v), 1) for v in thr_interp],
                 brake=[round(float(v), 1) for v in brk_interp],
                 drs=drs_interp,
-                distance=[round(float(v), 1) for v in dist_interp],
-                lap=[lap_start] * num_frames,
+                distance=track_dist_arr,
+                lap=[int(v) for v in lap_nums],
                 compound=[compound_val] * num_frames,
                 tyre_life=[tyre_life_val] * num_frames,
                 pit_status=["TRACK"] * num_frames,

@@ -22,8 +22,8 @@ export function DriverMarker3D({
 }: DriverMarker3DProps) {
   const groupRef = useRef<THREE.Group>(null);
 
-  // In chase cam, suppress the focused car's floating label to prevent cockpit clutter and HUD occlusion
-  const shouldRenderLabel = showLabels && !(isFocused && cameraMode === "chase");
+  // Driver label is shown for all cars including focused car in chase cam
+  const shouldRenderLabel = showLabels;
 
   // Position in Three.js coordinates: [x, z + offset, y]
   const pos: [number, number, number] = [
