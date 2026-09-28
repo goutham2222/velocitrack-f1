@@ -3,13 +3,14 @@
 import React, { useRef } from "react";
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
-import { InterpolatedDriverState } from "@/types/telemetry";
+import { CameraMode, InterpolatedDriverState } from "@/types/telemetry";
 
 interface DriverMarker3DProps {
   driver: InterpolatedDriverState;
   isFocused: boolean;
   onSelect: (code: string) => void;
   showLabels?: boolean;
+  cameraMode?: CameraMode;
 }
 
 export function DriverMarker3D({
