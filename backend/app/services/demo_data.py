@@ -87,16 +87,32 @@ MONACO_WAYPOINTS = [
 ]
 
 
+import json
+from pathlib import Path
+
+MONACO_GEOMETRY_PATH = Path(__file__).parent / "monaco_geometry.json"
+
+
 def generate_monaco_circuit() -> Tuple[CircuitGeometry, np.ndarray, np.ndarray, float]:
     """
-    Interpolates a continuous, smooth 3D spline centerline for Monaco Circuit.
+    Returns authentic Circuit de Monaco geometry with official FIA corners and 3D centerline.
     Returns: CircuitGeometry, dense points (N, 3), cumulative distances, total length.
     """
+    if MONACO_GEOMETRY_PATH.exists():
+        with open(MONACO_GEOMETRY_PATH, "r") as f:
+            data = json.load(f)
+        circuit = CircuitGeometry(**data)
+        dense_points = np.array(circuit.centerline, dtype=float)
+        deltas = np.diff(dense_points, axis=0)
+        seg_lengths = np.linalg.norm(deltas, axis=1)
+        cum_dist = np.insert(np.cumsum(seg_lengths), 0, 0.0)
+        total_length = float(cum_dist[-1])
+        return circuit, dense_points, cum_dist, total_length
+
+    # Fallback to parametric generation if JSON is unavailable
     pts = np.array([[wp["x"], wp["y"], wp["z"]] for wp in MONACO_WAYPOINTS])
-    # Close track loop
     pts = np.vstack([pts, pts[0]])
 
-    # Parametric spline interpolation
     from scipy.interpolate import splprep, splev
 
     tck, u = splprep([pts[:, 0], pts[:, 1], pts[:, 2]], s=0, per=True, k=3)
@@ -104,17 +120,14 @@ def generate_monaco_circuit() -> Tuple[CircuitGeometry, np.ndarray, np.ndarray, 
     dense_x, dense_y, dense_z = splev(dense_u, tck)
     dense_points = np.column_stack([dense_x, dense_y, dense_z])
 
-    # Calculate cumulative distance along spline
     deltas = np.diff(dense_points, axis=0)
     seg_lengths = np.linalg.norm(deltas, axis=1)
     cum_dist = np.insert(np.cumsum(seg_lengths), 0, 0.0)
     total_length = cum_dist[-1]
 
-    # Map turns
     turns: List[TurnMarker] = []
     for wp in MONACO_WAYPOINTS:
         if wp["turn"] is not None:
-            # find closest point on dense centerline
             wpt = np.array([wp["x"], wp["y"], wp["z"]])
             idx = int(np.argmin(np.linalg.norm(dense_points - wpt, axis=1)))
             turns.append(
@@ -190,9 +203,9 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
     # Smooth curvature
     curvatures = np.convolve(curvatures, np.ones(11) / 11, mode="same")
 
-    # Map curvature to base cornering speed (65 km/h hairpin, 280 km/h straight)
-    speed_profile_kmh = 285.0 - (curvatures * 7500.0)
-    speed_profile_kmh = np.clip(speed_profile_kmh, 60.0, 290.0)
+    # Map curvature to base cornering speed (55 km/h hairpin, 285 km/h straight)
+    speed_profile_kmh = 285.0 - (curvatures * 3200.0)
+    speed_profile_kmh = np.clip(speed_profile_kmh, 55.0, 290.0)
 
     # Generate telemetry for each driver
     drivers_data: Dict[str, DriverReplayStream] = {}
@@ -279,7 +292,7 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
 
             # Compute Throttle & Brake
             # If deceleration is happening (e.g. into braking zone)
-            next_idx = min(cl_idx + 15, num_dense - 1)
+            next_idx = (cl_idx + 15) % num_dense
             future_spd = speed_profile_kmh[next_idx]
             if future_spd < spd - 15.0:
                 brake = round(min(100.0, (spd - future_spd) * 2.5), 1)
@@ -288,8 +301,8 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
                 brake = 0.0
                 throttle = round(min(100.0, (spd / 280.0) * 100.0), 1)
 
-            # DRS Zone (Main straight: normalized_dist > 95% or < 6%)
-            is_drs_zone = (normalized_dist > track_length * 0.96) or (normalized_dist < track_length * 0.05)
+            # DRS Zone (Pit straight: normalized_dist > 91% or < 6%)
+            is_drs_zone = (normalized_dist > track_length * 0.91) or (normalized_dist < track_length * 0.06)
             drs_state = 12 if (is_drs_zone and spd > 200) else (1 if is_drs_zone else 0)
 
             # Tyre Life
