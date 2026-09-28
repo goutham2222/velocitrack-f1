@@ -71,7 +71,7 @@ export function ViewportContainer({
     const box = new THREE.Box3();
     if (circuit && circuit.centerline && circuit.centerline.length > 0) {
       for (const pt of circuit.centerline) {
-        box.expandByPoint(new THREE.Vector3(pt[0], pt[2] || 0.1, pt[1]));
+        box.expandByPoint(new THREE.Vector3(pt[0], pt[2] || 0.1, -pt[1]));
       }
     } else {
       box.set(new THREE.Vector3(-150, 0, -150), new THREE.Vector3(150, 10, 150));

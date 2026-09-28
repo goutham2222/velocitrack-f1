@@ -24,11 +24,11 @@ export function DriverMarker3D({
   // Driver label is shown for all cars (including the focused car in Chase Cam) whenever labels are enabled
   const shouldRenderLabel = showLabels;
 
-  // Position in Three.js coordinates: [x, z + offset, y]
+  // Position in Three.js coordinates: [x, z_elev + offset, -y]
   const pos: [number, number, number] = [
     driver.x,
     (driver.z || 0) + 1.2,
-    driver.y,
+    -driver.y,
   ];
 
   return (

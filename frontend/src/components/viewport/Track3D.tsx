@@ -21,7 +21,7 @@ export function Track3D({ circuit }: Track3DProps) {
     }
 
     const pts = circuit.centerline.map(
-      (p) => new THREE.Vector3(p[0], p[2] || 0.1, p[1]) // Note: map [X, Z_elev, Y] to Three.js coordinates
+      (p) => new THREE.Vector3(p[0], p[2] || 0.1, -p[1]) // Map [X, Z_elev, -Y] to Three.js right-handed coordinates
     );
 
     // Create closed smooth curve
@@ -69,11 +69,12 @@ export function Track3D({ circuit }: Track3DProps) {
 
       if (i < numPoints) {
         const base = i * 2;
-        indices.push(base, base + 1, base + 2);
-        indices.push(base + 1, base + 3, base + 2);
+        // Counter-clockwise winding so face normals point upward (+Y)
+        indices.push(base, base + 2, base + 1);
+        indices.push(base + 1, base + 2, base + 3);
 
-        kerbIndices.push(base, base + 1, base + 2);
-        kerbIndices.push(base + 1, base + 3, base + 2);
+        kerbIndices.push(base, base + 2, base + 1);
+        kerbIndices.push(base + 1, base + 2, base + 3);
       }
     }
 
@@ -207,7 +208,7 @@ export function Track3D({ circuit }: Track3DProps) {
         let minDistSq = Infinity;
         for (let i = 0; i < centerlinePoints.length; i++) {
           const cp = centerlinePoints[i];
-          const dSq = (cp.x - turn.x) ** 2 + (cp.z - turn.y) ** 2;
+          const dSq = (cp.x - turn.x) ** 2 + (cp.z - (-turn.y)) ** 2;
           if (dSq < minDistSq) {
             minDistSq = dSq;
             closestY = cp.y;
@@ -220,7 +221,7 @@ export function Track3D({ circuit }: Track3DProps) {
         return (
           <group
             key={`turn-${turn.number}-${turn.name || ""}`}
-            position={[turn.x, elevatedY, turn.y]}
+            position={[turn.x, elevatedY, -turn.y]}
           >
             {/* Vertical Marker Guide Pin down to Track Surface */}
             <mesh position={[0, -pinHeight / 2, 0]} renderOrder={2}>

@@ -46,8 +46,8 @@ export function CameraRig({
     const box = new THREE.Box3();
     if (circuit && circuit.centerline && circuit.centerline.length > 0) {
       for (const pt of circuit.centerline) {
-        // Map [X, Z_elev, Y] to Three.js coordinates [x, y, z]
-        box.expandByPoint(new THREE.Vector3(pt[0], pt[2] || 0.1, pt[1]));
+        // Map [X, Z_elev, -Y] to Three.js coordinates [x, y, z]
+        box.expandByPoint(new THREE.Vector3(pt[0], pt[2] || 0.1, -pt[1]));
       }
     } else {
       box.set(new THREE.Vector3(-150, 0, -150), new THREE.Vector3(150, 10, 150));
@@ -212,7 +212,7 @@ export function CameraRig({
       const driverPos = new THREE.Vector3(
         focusedDriver.x,
         (focusedDriver.z || 0) + 2.0,
-        focusedDriver.y
+        -focusedDriver.y
       );
 
       // Desired camera target: looking slightly ahead of the driver
