@@ -81,16 +81,13 @@ export default function ReplayDashboard() {
     initialDriver: null,
   });
 
-  // Calculate current lap milestone dynamically from playback progress
+  // Calculate current lap milestone directly from the race leader's synchronized telemetry
   const currentLap = useMemo(() => {
-    if (!payload) return 1;
-    const { lap_start, lap_end, total_laps } = payload.metadata;
-    const progress =
-      playback.duration > 0 ? playback.currentTime / playback.duration : 0;
-    const calculated =
-      lap_start + Math.floor(progress * Math.max(1, lap_end - lap_start + 1));
-    return Math.min(total_laps, Math.max(lap_start, calculated));
-  }, [payload, playback.currentTime, playback.duration]);
+    if (playback.leaderboard && playback.leaderboard.length > 0) {
+      return playback.leaderboard[0].lap;
+    }
+    return payload?.metadata.lap_start || 1;
+  }, [playback.leaderboard, payload?.metadata.lap_start]);
 
   // Load demo on initial mount for instant zero-wait startup
   useEffect(() => {

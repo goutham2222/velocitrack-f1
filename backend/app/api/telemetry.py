@@ -30,8 +30,8 @@ def get_session_replay(
     session: str = Query("R", description="Session code: FP1, FP2, FP3, Q, S, R"),
     lap_start: int = Query(1, ge=1, le=100),
     lap_end: int = Query(2, ge=1, le=100),
-    sampling_rate: int = Query(10, ge=2, le=20),
-):
+    sampling_rate: int = Query(10, ge=1, le=20),
+) -> ReplayPayload:
     """
     Fetches raw telemetry via FastF1, caches it to disk, downsamples to 5-10 Hz,
     and returns aligned multi-car telemetry for the requested lap range.

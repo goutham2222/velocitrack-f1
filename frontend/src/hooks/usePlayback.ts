@@ -286,10 +286,14 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         const distToPrev = Math.max(0, prevItem.distance - item.distance);
         const distToLeader = Math.max(0, leaderDist - item.distance);
 
-        // Approximate time delta = distance / average speed (converted to m/s)
-        const avgSpeedMs = Math.max(20, (drv.speed + prevItem.driver.speed) / 2 / 3.6);
-        const intervalSec = distToPrev / avgSpeedMs;
-        const leaderSec = distToLeader / avgSpeedMs;
+        // Stable race pace reference prevents erratic gap spikes during pit stops or hairpins
+        const leaderSpeed = leaderboardRaw[0].driver.speed;
+        const racePaceMs = Math.max(35, (leaderSpeed > 40 ? leaderSpeed : 180) / 3.6);
+        const leaderSec = distToLeader / racePaceMs;
+
+        const aheadSpeed = prevItem.driver.speed > 40 ? prevItem.driver.speed : 180;
+        const intervalSpeedMs = Math.max(25, (drv.speed > 40 ? drv.speed + aheadSpeed : aheadSpeed * 2) / 2 / 3.6);
+        const intervalSec = distToPrev / intervalSpeedMs;
 
         if (leaderLap - drv.lap >= 1) {
           const lapsBehind = leaderLap - drv.lap;

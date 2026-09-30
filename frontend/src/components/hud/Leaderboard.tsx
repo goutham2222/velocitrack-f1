@@ -45,78 +45,92 @@ export function Leaderboard({
       </div>
 
       {!collapsed && (
-        <div className="flex flex-col max-h-[calc(100vh-280px)] overflow-y-auto divide-y divide-white/5">
-          {entries.map((entry) => {
-            const isSelected = entry.code === selectedDriverCode;
-            const compoundStyle =
-              COMPOUND_COLORS[entry.compound.toUpperCase()] || COMPOUND_COLORS.MEDIUM;
+        <>
+          <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-white/5 text-[9px] font-mono text-slate-400 uppercase tracking-wider">
+            <span>POS / DRIVER</span>
+            <div className="flex items-center gap-2">
+              <span className="w-16 text-right">GAP</span>
+              <span className="w-5 text-center">TYRE</span>
+              <span className="w-6 text-right">AGE</span>
+            </div>
+          </div>
 
-            return (
-              <div
-                key={entry.code}
-                onClick={() => onSelectDriver(isSelected ? "" : entry.code)}
-                className={`flex items-center justify-between px-3 py-1.5 cursor-pointer transition-colors duration-100 ${
-                  isSelected
-                    ? "bg-white/10 border-l-4 border-l-white"
-                    : entry.inPit
-                    ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
-                    : "hover:bg-white/5 border-l-4 border-l-transparent"
-                }`}
-              >
-                {/* Left: Position & Driver Info */}
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-5 text-right font-mono text-[11px] font-bold text-slate-400">
-                    {entry.position}
-                  </span>
-                  <div
-                    className="w-1 h-4 rounded-sm flex-shrink-0"
-                    style={{ backgroundColor: entry.teamColor }}
-                  />
-                  <span className="font-mono text-xs font-bold text-slate-100 tracking-wide">
-                    {entry.code}
-                  </span>
-                  {entry.inPit && (
-                    <span
-                      title={entry.pitDuration ? `In Pit Lane: ${entry.pitDuration.toFixed(1)}s` : "In Pit Lane"}
-                      className="px-1.5 py-0.5 rounded bg-amber-500 text-black text-[9px] font-mono font-black uppercase tracking-wider border border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.6)] animate-pulse flex items-center gap-1"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
-                      PIT{entry.pitDuration ? ` ${entry.pitDuration.toFixed(0)}s` : ""}
+          <div className="flex flex-col max-h-[calc(100vh-280px)] overflow-y-auto divide-y divide-white/5">
+            {entries.map((entry) => {
+              const isSelected = entry.code === selectedDriverCode;
+              const compoundStyle =
+                COMPOUND_COLORS[entry.compound.toUpperCase()] || COMPOUND_COLORS.MEDIUM;
+
+              return (
+                <div
+                  key={entry.code}
+                  onClick={() => onSelectDriver(isSelected ? "" : entry.code)}
+                  className={`flex items-center justify-between px-3 py-1.5 cursor-pointer transition-colors duration-100 ${
+                    isSelected
+                      ? "bg-white/10 border-l-4 border-l-white"
+                      : entry.inPit
+                      ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
+                      : "hover:bg-white/5 border-l-4 border-l-transparent"
+                  }`}
+                >
+                  {/* Left: Position & Driver Info */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-5 text-right font-mono text-[11px] font-bold text-slate-400">
+                      {entry.position}
                     </span>
-                  )}
-                  {entry.drsThreat && entry.position > 1 && !entry.inPit && (
-                    <span
-                      title="DRS threat within 1.0s"
-                      className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold border border-emerald-500/40 animate-pulse"
-                    >
-                      DRS
+                    <div
+                      className="w-1 h-4 rounded-sm flex-shrink-0"
+                      style={{ backgroundColor: entry.teamColor }}
+                    />
+                    <span className="font-mono text-xs font-bold text-slate-100 tracking-wide">
+                      {entry.code}
                     </span>
-                  )}
-                </div>
-
-                {/* Right: Gap & Compound */}
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={`font-mono text-[11px] font-medium w-16 text-right ${entry.inPit ? "text-amber-400 font-bold" : "text-slate-300"}`}>
-                    {entry.inPit ? "PIT" : (entry.position === 1 ? "LEADER" : entry.gapToLeader)}
-                  </span>
-
-                  {/* Compound badge */}
-                  <div
-                    className={`w-5 h-5 rounded-full flex items-center justify-center border text-[10px] font-mono font-bold ${compoundStyle.bg} ${compoundStyle.text} ${compoundStyle.border}`}
-                    title={`${entry.compound} tyre, ${entry.tyreLife} laps old`}
-                  >
-                    {entry.compound.charAt(0).toUpperCase()}
+                    {entry.inPit && (
+                      <span
+                        title={entry.pitDuration ? `In Pit Lane: ${entry.pitDuration.toFixed(1)}s` : "In Pit Lane"}
+                        className="px-1.5 py-0.5 rounded bg-amber-500 text-black text-[9px] font-mono font-black uppercase tracking-wider border border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.6)] animate-pulse flex items-center gap-1"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
+                        PIT{entry.pitDuration ? ` ${entry.pitDuration.toFixed(0)}s` : ""}
+                      </span>
+                    )}
+                    {entry.drsThreat && entry.position > 1 && !entry.inPit && (
+                      <span
+                        title="DRS threat within 1.0s"
+                        className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold border border-emerald-500/40 animate-pulse"
+                      >
+                        DRS
+                      </span>
+                    )}
                   </div>
 
-                  {/* Tyre life */}
-                  <span className="text-[10px] font-mono text-slate-500 w-6 text-right">
-                    L{entry.tyreLife}
-                  </span>
+                  {/* Right: Gap & Compound */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`font-mono text-[11px] font-medium w-16 text-right ${entry.inPit ? "text-amber-400 font-bold" : "text-slate-300"}`}>
+                      {entry.inPit ? "PIT" : (entry.position === 1 ? "LEADER" : entry.gapToLeader)}
+                    </span>
+
+                    {/* Compound badge */}
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center border text-[10px] font-mono font-bold ${compoundStyle.bg} ${compoundStyle.text} ${compoundStyle.border}`}
+                      title={`${entry.compound} tyre, ${entry.tyreLife} laps old`}
+                    >
+                      {entry.compound.charAt(0).toUpperCase()}
+                    </div>
+
+                    {/* Tyre life */}
+                    <span
+                      className="text-[10px] font-mono text-slate-400 w-6 text-right"
+                      title={`Tyre age: ${entry.tyreLife} laps on ${entry.compound}`}
+                    >
+                      {entry.tyreLife}L
+                    </span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

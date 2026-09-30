@@ -67,13 +67,24 @@ def build_replay_payload_from_session(
     t_start = t_start_delta.total_seconds() if hasattr(t_start_delta, "total_seconds") else 0.0
     t_end = t_end_delta.total_seconds() if hasattr(t_end_delta, "total_seconds") else (t_start + 180.0)
 
-    duration = max(10.0, t_end - t_start)
-    # Cap single query duration to 400s for bandwidth safety
-    if duration > 400.0:
-        duration = 400.0
-        t_end = t_start + duration
+    raw_duration = max(10.0, t_end - t_start)
+    # Cap replay duration to 3 hours (10,800s) to cover any full race session including red flags
+    MAX_REPLAY_DURATION = 10800.0
+    duration = min(raw_duration, MAX_REPLAY_DURATION)
+    t_end = t_start + duration
 
-    num_frames = int(duration * sampling_rate)
+    # Adaptive sampling frequency: for short replays use requested sampling_rate (up to 10 Hz).
+    # For long multi-lap or full race replays (> 600s), dynamically scale sampling rate (down to 1 Hz)
+    # to maintain high UI responsiveness (~4,000 - 6,000 frames total).
+    # The frontend smoothly interpolates with Catmull-Rom splines at 60 FPS regardless of sampling rate.
+    TARGET_MAX_FRAMES = 6000
+    if duration * sampling_rate > TARGET_MAX_FRAMES:
+        effective_sampling_rate = max(1, int(TARGET_MAX_FRAMES / duration))
+    else:
+        effective_sampling_rate = max(1, sampling_rate)
+
+    dt = 1.0 / effective_sampling_rate
+    num_frames = int(duration * effective_sampling_rate)
     uniform_grid = np.linspace(t_start, t_end, num_frames)
     timestamps = [round(i * dt, 2) for i in range(num_frames)]
 
@@ -249,48 +260,66 @@ def build_replay_payload_from_session(
             # Compute true circuit track progress via KDTree projection
             if track_tree is not None and shifted_cum_dist is not None:
                 _, closest_indices = track_tree.query(np.column_stack([x_interp, y_interp]))
-                lap_dist = shifted_cum_dist[closest_indices]
+                raw_s = shifted_cum_dist[closest_indices]
+                L = total_track_length
 
-                # Dynamic lap numbers across session time
-                lap_nums = []
-                for t in uniform_grid:
-                    matched_lap = lap_start
+                # Determine starting distance and lap
+                unwrapped_dist = np.zeros(num_frames, dtype=float)
+                computed_laps = np.zeros(num_frames, dtype=int)
+
+                # For Lap 1 start, cars are lined up on the grid behind the start/finish line.
+                # Grid spots have raw_s > 0.5 * L (near the end of the circuit loop before the line).
+                has_started_lap1 = (lap_start > 1)
+                laps_completed = 0
+
+                s0 = raw_s[0]
+                if lap_start == 1:
+                    if s0 > 0.5 * L:
+                        unwrapped_dist[0] = s0 - L
+                    else:
+                        unwrapped_dist[0] = s0
+                        has_started_lap1 = True
+                    computed_laps[0] = 1
+                else:
+                    # Mid-race session start: identify driver's current lap at uniform_grid[0]
+                    init_lap = lap_start
                     for _, r in drv_laps.iterrows():
                         st = r["LapStartTime"].total_seconds() if pd.notnull(r["LapStartTime"]) else 0
                         et = r["Time"].total_seconds() if pd.notnull(r["Time"]) else float('inf')
-                        if st <= t <= et:
-                            matched_lap = int(r["LapNumber"])
+                        if st <= uniform_grid[0] <= et:
+                            init_lap = int(r["LapNumber"])
                             break
-                    lap_nums.append(matched_lap)
-                lap_nums = np.array(lap_nums)
+                    laps_completed = max(0, init_lap - lap_start)
+                    unwrapped_dist[0] = laps_completed * L + s0
+                    computed_laps[0] = init_lap
 
-                # Monotonic race distance calculation
-                track_dist_arr = []
-                has_crossed_start_line = (lap_start > 1)
+                # Unwrapped continuous forward distance integration
+                for f in range(1, num_frames):
+                    raw_ds = raw_s[f] - raw_s[f - 1]
+                    ds = raw_ds
 
-                for f in range(num_frames):
-                    cur_lap = lap_nums[f]
-                    raw_d = lap_dist[f]
-                    spd = spd_interp[f]
-
-                    if not has_crossed_start_line:
-                        if cur_lap > 1 or (raw_d < total_track_length * 0.35 and spd > 15.0):
-                            has_crossed_start_line = True
-
-                    if not has_crossed_start_line:
-                        # Stationary or lining up on grid behind start line
-                        if raw_d > total_track_length * 0.5:
-                            d_val = raw_d - total_track_length
+                    # Detect crossing of the start/finish line (s wraps from near L to near 0)
+                    if raw_ds < -0.5 * L:
+                        ds = raw_ds + L
+                        if lap_start == 1 and not has_started_lap1:
+                            has_started_lap1 = True
                         else:
-                            d_val = raw_d
+                            laps_completed += 1
+                    elif raw_ds > 0.5 * L:
+                        ds = raw_ds - L
+
+                    # Clamp motion: stopped/retired cars and pit stops don't reverse or jump
+                    spd = spd_interp[f]
+                    if spd < 1.0:
+                        ds = 0.0
                     else:
-                        d_val = (cur_lap - lap_start) * total_track_length + raw_d
+                        ds = max(0.0, ds)
 
-                    track_dist_arr.append(round(float(d_val), 1))
+                    unwrapped_dist[f] = unwrapped_dist[f - 1] + ds
+                    computed_laps[f] = lap_start + laps_completed
 
-                # Handle pit lane starters on lap 1
-                if lap_start == 1 and track_dist_arr[0] > 0 and spd_interp[0] < 5.0:
-                    track_dist_arr[0] = -250.0  # At the back of the starting pack
+                track_dist_arr = [round(float(v), 1) for v in unwrapped_dist]
+                lap_nums = computed_laps
             else:
                 track_dist_arr = [0.0] * num_frames
                 lap_nums = [lap_start] * num_frames
@@ -363,7 +392,7 @@ def build_replay_payload_from_session(
 
                 # Pit lane speed limiter heuristic: sustained speed between 20 and 82 km/h near start/finish straight
                 if not is_pitting and track_dist_arr and len(track_dist_arr) > f_idx:
-                    raw_lap_dist = lap_dist[f_idx] if (track_tree is not None and len(lap_dist) > f_idx) else 0.0
+                    raw_lap_dist = raw_s[f_idx] if (track_tree is not None and len(raw_s) > f_idx) else 0.0
                     cur_spd = spd_interp[f_idx]
                     is_near_pit_straight = (raw_lap_dist < 400.0 or raw_lap_dist > (total_track_length - 400.0))
                     if is_near_pit_straight and (20.0 <= cur_spd <= 82.0) and lap_nums[f_idx] > 1:
@@ -444,10 +473,17 @@ def build_replay_payload_from_session(
             status_text="GREEN FLAG",
         )
     ]
-    if hasattr(session, "weather_data") and session.weather_data is not None and not session.weather_data.empty:
+    has_weather = False
+    try:
+        if hasattr(session, "_weather_data") and session._weather_data is not None and not session.weather_data.empty:
+            has_weather = True
+    except Exception:
+        has_weather = False
+
+    if has_weather:
         try:
             w_df = session.weather_data
-            for _, row in w_df.head(5).iterrows():
+            for _, row in w_df.head(10).iterrows():
                 time_sec = row["Time"].total_seconds() if hasattr(row["Time"], "total_seconds") else 0.0
                 rel_sec = max(0.0, time_sec - t_start)
                 if rel_sec <= duration:
@@ -466,6 +502,8 @@ def build_replay_payload_from_session(
         except Exception as e:
             logger.debug(f"Failed to parse weather: {e}")
 
+    actual_lap_end = int(target_laps["LapNumber"].dropna().max()) if not target_laps.empty else lap_end
+
     metadata = ReplayMetadata(
         year=int(session.event.get("Year", 2024)),
         event_name=str(session.event.get("EventName", "Grand Prix")),
@@ -477,7 +515,7 @@ def build_replay_payload_from_session(
         start_session_time=round(t_start, 2),
         end_session_time=round(t_end, 2),
         lap_start=lap_start,
-        lap_end=lap_end,
+        lap_end=actual_lap_end,
         total_laps=len(laps_df["LapNumber"].unique()),
     )
 

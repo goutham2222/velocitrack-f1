@@ -27,13 +27,21 @@ interface PlaybackControlsProps {
 
 const SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 1, 2, 4, 8, 16];
 
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 1000);
-  return `${mins.toString().padStart(2, "0")}:${secs
-    .toString()
-    .padStart(2, "0")}.${ms.toString().padStart(3, "0").slice(0, 2)}`;
+function formatTime(seconds: number, forceHours: boolean = false): string {
+  const safeSeconds = Math.max(0, isNaN(seconds) ? 0 : seconds);
+  const hrs = Math.floor(safeSeconds / 3600);
+  const mins = Math.floor((safeSeconds % 3600) / 60);
+  const secs = Math.floor(safeSeconds % 60);
+  const ms = Math.floor((safeSeconds % 1) * 100);
+
+  const msStr = ms.toString().padStart(2, "0");
+  const secsStr = secs.toString().padStart(2, "0");
+  const minsStr = mins.toString().padStart(2, "0");
+
+  if (hrs > 0 || forceHours) {
+    return `${hrs.toString().padStart(2, "0")}:${minsStr}:${secsStr}.${msStr}`;
+  }
+  return `${minsStr}:${secsStr}.${msStr}`;
 }
 
 export function PlaybackControls({
@@ -49,6 +57,7 @@ export function PlaybackControls({
   onChangeSpeed,
 }: PlaybackControlsProps) {
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const showHours = duration >= 3600;
 
   return (
     <div className="w-full glass-panel rounded-2xl px-5 py-3 border border-white/10 shadow-2xl flex flex-col gap-2.5 select-none">
@@ -77,11 +86,11 @@ export function PlaybackControls({
         {/* Left: Timecode Display */}
         <div className="flex items-center gap-2">
           <div className="font-mono text-sm font-black text-white tracking-widest bg-black/40 px-3 py-1 rounded-md border border-white/5">
-            {formatTime(currentTime)}
+            {formatTime(currentTime, showHours)}
           </div>
           <span className="text-slate-500 font-mono text-xs">/</span>
           <div className="font-mono text-xs text-slate-400">
-            {formatTime(duration)}
+            {formatTime(duration, showHours)}
           </div>
         </div>
 
