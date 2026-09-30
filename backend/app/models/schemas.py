@@ -85,6 +85,25 @@ class CircuitGeometry(BaseModel):
 # Telemetry Replay Schemas
 # ---------------------------------------------------------------------------
 
+class TelemetrySample(BaseModel):
+    x: float
+    y: float
+    z: float
+    speed: float
+    rpm: int
+    gear: int
+    throttle: float
+    brake: float
+    drs: int
+    distance: float
+    lap: int
+    compound: str
+    tyre_life: int
+    pit_status: str = "TRACK"
+    is_pitting: bool = False
+    pit_duration: Optional[float] = None
+
+
 class DriverReplayStream(BaseModel):
     code: str
     number: int
@@ -105,6 +124,8 @@ class DriverReplayStream(BaseModel):
     compound: List[str]
     tyre_life: List[int]
     pit_status: List[str]
+    is_pitting: List[bool] = Field(default_factory=list)
+    pit_duration: Optional[List[Optional[float]]] = None
 
 
 class WeatherSample(BaseModel):

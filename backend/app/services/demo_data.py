@@ -232,6 +232,8 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
         compound_arr = []
         tyre_life_arr = []
         pit_arr = []
+        is_pitting_arr = []
+        pit_duration_arr = []
 
         curr_dist = initial_distance_offset
         current_lap = 1
@@ -241,6 +243,25 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
 
         for f_idx in range(total_frames):
             t = timestamps[f_idx]
+
+            # Dynamic Pit Stop Simulation:
+            # Leclerc (rank 2) pits on Lap 2 (t: 80.0s -> 102.0s)
+            # Hamilton (rank 5) pits on Lap 3 (t: 152.0s -> 174.0s)
+            is_driver_pitting = False
+            cur_pit_dur = None
+
+            if rank == 2 and 80.0 <= t <= 102.0:
+                is_driver_pitting = True
+                cur_pit_dur = round(float(t - 80.0), 1)
+            elif rank == 5 and 152.0 <= t <= 174.0:
+                is_driver_pitting = True
+                cur_pit_dur = round(float(t - 152.0), 1)
+
+            # Post-pit tyre change & fresh tyre life
+            if rank == 2 and t > 102.0:
+                compound = "HARD"
+            elif rank == 5 and t > 174.0:
+                compound = "MEDIUM"
 
             # Calculate lap and lap distance
             normalized_dist = (curr_dist % track_length)
@@ -255,21 +276,26 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
 
             # Position with slight lateral racing line variation
             pos = dense_pts[cl_idx].copy()
-            # Slight racing line offset based on driver number
+            # Slight racing line offset based on driver number (pit lane offset if pitting)
             lateral_offset = (math.sin(t * 0.5 + rank) * 0.4)
+            if is_driver_pitting:
+                lateral_offset += 2.8  # Branch into pit lane
             pos[0] += lateral_offset
             pos[1] += lateral_offset * 0.5
 
-            # Speed calculation based on track position
-            raw_spd = speed_profile_kmh[cl_idx] + (math.cos(t * 0.2 + rank) * 3.0)
-            spd = max(55.0, min(295.0, raw_spd))
+            # Speed calculation based on track position or pit limiter
+            if is_driver_pitting:
+                spd = 60.0  # F1 Pit Lane Speed Limiter (60 km/h at Monaco)
+            else:
+                raw_spd = speed_profile_kmh[cl_idx] + (math.cos(t * 0.2 + rank) * 3.0)
+                spd = max(55.0, min(295.0, raw_spd))
 
             # Move distance forward for next frame
             curr_dist += (spd / 3.6) * dt
 
             # Compute Gear and RPM
             if spd < 75:
-                gear = 1
+                gear = 1 if not is_driver_pitting else 2
             elif spd < 115:
                 gear = 2
             elif spd < 155:
@@ -288,25 +314,33 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
             gear_base_spd = [0, 50, 95, 135, 175, 215, 250, 275, 290]
             spd_in_gear = max(0.0, spd - gear_base_spd[gear])
             rpm = int(10500 + (spd_in_gear / 40.0) * 2000)
-            rpm = max(10000, min(13000, rpm))
+            if is_driver_pitting:
+                rpm = 9200
+            rpm = max(8500, min(13000, rpm))
 
             # Compute Throttle & Brake
-            # If deceleration is happening (e.g. into braking zone)
-            next_idx = (cl_idx + 15) % num_dense
-            future_spd = speed_profile_kmh[next_idx]
-            if future_spd < spd - 15.0:
-                brake = round(min(100.0, (spd - future_spd) * 2.5), 1)
-                throttle = 0.0
-            else:
+            if is_driver_pitting:
                 brake = 0.0
-                throttle = round(min(100.0, (spd / 280.0) * 100.0), 1)
+                throttle = 40.0  # Limiter hold
+            else:
+                next_idx = (cl_idx + 15) % num_dense
+                future_spd = speed_profile_kmh[next_idx]
+                if future_spd < spd - 15.0:
+                    brake = round(min(100.0, (spd - future_spd) * 2.5), 1)
+                    throttle = 0.0
+                else:
+                    brake = 0.0
+                    throttle = round(min(100.0, (spd / 280.0) * 100.0), 1)
 
             # DRS Zone (Pit straight: normalized_dist > 91% or < 6%)
-            is_drs_zone = (normalized_dist > track_length * 0.91) or (normalized_dist < track_length * 0.06)
+            is_drs_zone = not is_driver_pitting and ((normalized_dist > track_length * 0.91) or (normalized_dist < track_length * 0.06))
             drs_state = 12 if (is_drs_zone and spd > 200) else (1 if is_drs_zone else 0)
 
-            # Tyre Life
-            tyre_life = 8 + current_lap
+            # Tyre Life (resets to 1 after pit stop)
+            if (rank == 2 and t > 102.0) or (rank == 5 and t > 174.0):
+                tyre_life = max(1, current_lap - 1)
+            else:
+                tyre_life = 8 + current_lap
 
             # Append to driver streams
             x_arr.append(round(float(pos[0]), 2))
@@ -322,7 +356,9 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
             lap_arr.append(current_lap)
             compound_arr.append(compound)
             tyre_life_arr.append(tyre_life)
-            pit_arr.append("TRACK")
+            pit_arr.append("IN_PIT" if is_driver_pitting else "TRACK")
+            is_pitting_arr.append(is_driver_pitting)
+            pit_duration_arr.append(cur_pit_dur)
 
         drivers_data[driver_meta["code"]] = DriverReplayStream(
             code=driver_meta["code"],
@@ -344,6 +380,8 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
             compound=compound_arr,
             tyre_life=tyre_life_arr,
             pit_status=pit_arr,
+            is_pitting=is_pitting_arr,
+            pit_duration=pit_duration_arr,
         )
 
     # Weather & Race Control simulation

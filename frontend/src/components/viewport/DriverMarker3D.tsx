@@ -21,6 +21,10 @@ export function DriverMarker3D({
 }: DriverMarker3DProps) {
   const groupRef = useRef<THREE.Group>(null);
 
+  // Determine if driver is currently in pit lane
+  const isPitting = Boolean(driver.is_pitting || driver.pitStatus?.includes("PIT"));
+  const markerColor = isPitting ? "#F59E0B" : driver.teamColor;
+
   // Driver label is shown for all cars (including the focused car in Chase Cam) whenever labels are enabled
   const shouldRenderLabel = showLabels;
 
@@ -50,9 +54,9 @@ export function DriverMarker3D({
       <mesh castShadow>
         <sphereGeometry args={[isFocused ? 2.2 : 1.8, 16, 16]} />
         <meshStandardMaterial
-          color={driver.teamColor}
-          emissive={driver.teamColor}
-          emissiveIntensity={isFocused ? 0.6 : 0.25}
+          color={markerColor}
+          emissive={markerColor}
+          emissiveIntensity={isPitting ? 0.9 : isFocused ? 0.6 : 0.25}
           roughness={0.2}
           metalness={0.8}
         />
@@ -62,14 +66,14 @@ export function DriverMarker3D({
       <mesh position={[0, -0.9, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[1.8, isFocused ? 3.5 : 2.5, 32]} />
         <meshBasicMaterial
-          color={driver.teamColor}
+          color={markerColor}
           transparent
-          opacity={isFocused ? 0.8 : 0.4}
+          opacity={isPitting ? 0.9 : isFocused ? 0.8 : 0.4}
           side={THREE.DoubleSide}
         />
       </mesh>
 
-      {/* Floating Acronym Tag */}
+      {/* Floating Acronym Tag & Pit Indicator */}
       {shouldRenderLabel && (
         <Html
           position={[0, 4.5, 0]}
@@ -88,16 +92,22 @@ export function DriverMarker3D({
                 : "hover:scale-105 opacity-90 hover:opacity-100"
             }`}
             style={{
-              backgroundColor: "rgba(11, 14, 20, 0.9)",
-              border: `1.5px solid ${driver.teamColor}`,
+              backgroundColor: isPitting ? "rgba(24, 18, 5, 0.92)" : "rgba(11, 14, 20, 0.9)",
+              border: `1.5px solid ${markerColor}`,
+              boxShadow: isPitting ? "0 0 14px rgba(245, 158, 11, 0.6)" : undefined,
               color: "#FFFFFF",
             }}
           >
             <span
               className="w-2 h-2 rounded-full inline-block"
-              style={{ backgroundColor: driver.teamColor }}
+              style={{ backgroundColor: markerColor }}
             />
             <span>{driver.code}</span>
+            {isPitting && (
+              <span className="px-1 py-0.2 rounded bg-amber-500 text-black text-[9px] font-black uppercase tracking-wider animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.8)]">
+                PIT{driver.pit_duration ? ` ${driver.pit_duration.toFixed(0)}s` : ""}
+              </span>
+            )}
             {isFocused && (
               <span className="text-[9px] text-slate-300 font-normal border-l border-white/20 pl-1">
                 {Math.round(driver.speed)} km/h

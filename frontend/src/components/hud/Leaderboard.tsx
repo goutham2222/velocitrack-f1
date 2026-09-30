@@ -58,6 +58,8 @@ export function Leaderboard({
                 className={`flex items-center justify-between px-3 py-1.5 cursor-pointer transition-colors duration-100 ${
                   isSelected
                     ? "bg-white/10 border-l-4 border-l-white"
+                    : entry.inPit
+                    ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
                     : "hover:bg-white/5 border-l-4 border-l-transparent"
                 }`}
               >
@@ -74,8 +76,12 @@ export function Leaderboard({
                     {entry.code}
                   </span>
                   {entry.inPit && (
-                    <span className="px-1 py-0.2 rounded bg-amber-500/20 text-amber-400 text-[9px] font-mono uppercase font-bold border border-amber-500/40">
-                      PIT
+                    <span
+                      title={entry.pitDuration ? `In Pit Lane: ${entry.pitDuration.toFixed(1)}s` : "In Pit Lane"}
+                      className="px-1.5 py-0.5 rounded bg-amber-500 text-black text-[9px] font-mono font-black uppercase tracking-wider border border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.6)] animate-pulse flex items-center gap-1"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
+                      PIT{entry.pitDuration ? ` ${entry.pitDuration.toFixed(0)}s` : ""}
                     </span>
                   )}
                   {entry.drsThreat && entry.position > 1 && !entry.inPit && (
@@ -90,8 +96,8 @@ export function Leaderboard({
 
                 {/* Right: Gap & Compound */}
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="font-mono text-[11px] font-medium text-slate-300 w-16 text-right">
-                    {entry.position === 1 ? "LEADER" : entry.gapToLeader}
+                  <span className={`font-mono text-[11px] font-medium w-16 text-right ${entry.inPit ? "text-amber-400 font-bold" : "text-slate-300"}`}>
+                    {entry.inPit ? "PIT" : (entry.position === 1 ? "LEADER" : entry.gapToLeader)}
                   </span>
 
                   {/* Compound badge */}

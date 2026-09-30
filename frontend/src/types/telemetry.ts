@@ -76,6 +76,27 @@ export interface DriverReplayStream {
   compound: string[];
   tyre_life: number[];
   pit_status: string[];
+  is_pitting?: boolean[];
+  pit_duration?: (number | null)[];
+}
+
+export interface TelemetrySample {
+  x: number;
+  y: number;
+  z: number;
+  speed: number;
+  rpm: number;
+  gear: number;
+  throttle: number;
+  brake: number;
+  drs: number;
+  distance: number;
+  lap: number;
+  compound: string;
+  tyre_life: number;
+  pit_status: string;
+  is_pitting: boolean;
+  pit_duration?: number | null;
 }
 
 export interface WeatherSample {
@@ -136,6 +157,8 @@ export interface InterpolatedDriverState {
   compound: string;
   tyreLife: number;
   pitStatus: string;
+  is_pitting: boolean;
+  pit_duration?: number | null;
 }
 
 export interface LeaderboardEntry {
@@ -153,6 +176,7 @@ export interface LeaderboardEntry {
   tyreLife: number;
   drsThreat: boolean;
   inPit: boolean;
+  pitDuration?: number | null;
 }
 
 export type CameraMode = "orbit" | "chase";

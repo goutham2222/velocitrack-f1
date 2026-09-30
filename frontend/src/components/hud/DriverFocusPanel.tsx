@@ -56,6 +56,14 @@ export function DriverFocusPanel({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Pit Status Pill */}
+          {Boolean(driver.is_pitting || driver.pitStatus?.includes("PIT")) && (
+            <div className="px-2 py-0.5 rounded text-[10px] font-mono font-black tracking-wider uppercase border border-amber-500/70 bg-amber-500/20 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.4)] animate-pulse flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+              PIT LANE{driver.pit_duration ? ` ${driver.pit_duration.toFixed(1)}s` : ""}
+            </div>
+          )}
+
           {/* DRS Status Pill */}
           <div
             className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase border transition-all ${

@@ -231,7 +231,12 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       const lap = stream.lap[k] || 1;
       const compound = stream.compound[k] || "MEDIUM";
       const tyreLife = stream.tyre_life[k] || 10;
-      const pitStatus = stream.pit_status[k] || "TRACK";
+      const pitStatus = stream.pit_status?.[k] || "TRACK";
+      const is_pitting = Boolean(
+        stream.is_pitting?.[k] ??
+        pitStatus.includes("PIT")
+      );
+      const pit_duration = stream.pit_duration?.[k] ?? null;
 
       const driverObj: InterpolatedDriverState = {
         code,
@@ -253,6 +258,8 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         compound,
         tyreLife,
         pitStatus,
+        is_pitting,
+        pit_duration,
       };
 
       driversMap[code] = driverObj;
@@ -309,7 +316,8 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         compound: drv.compound,
         tyreLife: drv.tyreLife,
         drsThreat,
-        inPit: drv.pitStatus.includes("PIT"),
+        inPit: drv.is_pitting || drv.pitStatus.includes("PIT"),
+        pitDuration: drv.pit_duration,
       });
     }
 

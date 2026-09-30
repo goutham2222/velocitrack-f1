@@ -305,9 +305,101 @@ def build_replay_payload_from_session(
             gear_interp = gear_raw[nearest_indices].astype(int).tolist()
             drs_interp = drs_raw[nearest_indices].astype(int).tolist()
 
-            # Compound and tyre life
-            compound_val = str(drv_laps.iloc[0].get("Compound", "MEDIUM"))
-            tyre_life_val = int(drv_laps.iloc[0].get("TyreLife", 10))
+            # Pit stop windows detection
+            pit_windows: List[Tuple[float, float, float]] = []  # (t_in, t_out, duration)
+            if drv_laps is not None and not drv_laps.empty:
+                laps_sorted = drv_laps.sort_values(by="LapNumber") if "LapNumber" in drv_laps else drv_laps
+                for i_lap, (_, r) in enumerate(laps_sorted.iterrows()):
+                    pit_in = r.get("PitInTime")
+                    pit_out = r.get("PitOutTime")
+
+                    t_in = pit_in.total_seconds() if (pd.notnull(pit_in) and hasattr(pit_in, "total_seconds")) else None
+                    t_out = pit_out.total_seconds() if (pd.notnull(pit_out) and hasattr(pit_out, "total_seconds")) else None
+
+                    if t_in is not None and t_out is not None and t_out > t_in:
+                        pit_windows.append((t_in, t_out, t_out - t_in))
+                    elif t_in is not None:
+                        t_out_next = None
+                        if i_lap + 1 < len(laps_sorted):
+                            next_r = laps_sorted.iloc[i_lap + 1]
+                            next_po = next_r.get("PitOutTime")
+                            if pd.notnull(next_po) and hasattr(next_po, "total_seconds"):
+                                t_out_next = next_po.total_seconds()
+                        if t_out_next is not None and t_out_next > t_in:
+                            pit_windows.append((t_in, t_out_next, t_out_next - t_in))
+                        else:
+                            # Typical F1 pit lane transit is ~24 seconds
+                            pit_windows.append((t_in, t_in + 24.0, 24.0))
+                    elif t_out is not None:
+                        pit_windows.append((max(0.0, t_out - 24.0), t_out, 24.0))
+
+            # Telemetry pit flags (e.g. InPit or Status column in FastF1 telemetry)
+            tel_in_pit_flags = None
+            if "InPit" in drv_telemetry:
+                tel_in_pit_flags = drv_telemetry["InPit"].fillna(False).astype(bool).to_numpy()
+            elif "Status" in drv_telemetry:
+                tel_in_pit_flags = np.array(["pit" in str(s).lower() for s in drv_telemetry["Status"]])
+
+            # Frame-by-frame pit status and duration
+            is_pitting_arr: List[bool] = []
+            pit_status_arr: List[str] = []
+            pit_duration_arr: List[Optional[float]] = []
+
+            for f_idx, t in enumerate(uniform_grid):
+                is_pitting = False
+                cur_dur: Optional[float] = None
+
+                for (p_in, p_out, dur) in pit_windows:
+                    if p_in <= t <= p_out:
+                        is_pitting = True
+                        cur_dur = round(float(t - p_in), 1)
+                        break
+
+                if not is_pitting and tel_in_pit_flags is not None and len(tel_times) > 0:
+                    idx_near = nearest_indices[f_idx]
+                    if 0 <= idx_near < len(tel_in_pit_flags) and tel_in_pit_flags[idx_near]:
+                        is_pitting = True
+                        cur_dur = 0.0
+
+                # Pit lane speed limiter heuristic: sustained speed between 20 and 82 km/h near start/finish straight
+                if not is_pitting and track_dist_arr and len(track_dist_arr) > f_idx:
+                    raw_lap_dist = lap_dist[f_idx] if (track_tree is not None and len(lap_dist) > f_idx) else 0.0
+                    cur_spd = spd_interp[f_idx]
+                    is_near_pit_straight = (raw_lap_dist < 400.0 or raw_lap_dist > (total_track_length - 400.0))
+                    if is_near_pit_straight and (20.0 <= cur_spd <= 82.0) and lap_nums[f_idx] > 1:
+                        if f_idx > 5 and all(20.0 <= spd_interp[max(0, f_idx - k)] <= 82.0 for k in range(1, 4)):
+                            is_pitting = True
+                            cur_dur = 5.0
+
+                if is_pitting:
+                    is_pitting_arr.append(True)
+                    pit_status_arr.append("IN_PIT")
+                    pit_duration_arr.append(cur_dur)
+                else:
+                    is_pitting_arr.append(False)
+                    pit_status_arr.append("TRACK")
+                    pit_duration_arr.append(None)
+
+            # Dynamic compound and tyre life mapped per lap
+            lap_compound_map = {}
+            lap_tyrelife_map = {}
+            if drv_laps is not None and not drv_laps.empty:
+                for _, r in drv_laps.iterrows():
+                    ln = int(r.get("LapNumber", 1))
+                    c_str = str(r.get("Compound", "MEDIUM") or "MEDIUM").upper()
+                    tl_val = int(r.get("TyreLife", 1) or 1)
+                    lap_compound_map[ln] = c_str
+                    lap_tyrelife_map[ln] = tl_val
+
+            default_compound = str(drv_laps.iloc[0].get("Compound", "MEDIUM") or "MEDIUM").upper() if not drv_laps.empty else "MEDIUM"
+            default_tyrelife = int(drv_laps.iloc[0].get("TyreLife", 10) or 10) if not drv_laps.empty else 10
+
+            compound_arr = []
+            tyre_life_arr = []
+            for f in range(num_frames):
+                cur_l = lap_nums[f]
+                compound_arr.append(lap_compound_map.get(cur_l, default_compound))
+                tyre_life_arr.append(lap_tyrelife_map.get(cur_l, default_tyrelife))
 
             drivers_dict[code] = DriverReplayStream(
                 code=code,
@@ -326,9 +418,11 @@ def build_replay_payload_from_session(
                 drs=drs_interp,
                 distance=track_dist_arr,
                 lap=[int(v) for v in lap_nums],
-                compound=[compound_val] * num_frames,
-                tyre_life=[tyre_life_val] * num_frames,
-                pit_status=["TRACK"] * num_frames,
+                compound=compound_arr,
+                tyre_life=tyre_life_arr,
+                pit_status=pit_status_arr,
+                is_pitting=is_pitting_arr,
+                pit_duration=pit_duration_arr,
             )
         except Exception as e:
             logger.warning(f"Error processing driver {drv_id}: {e}")

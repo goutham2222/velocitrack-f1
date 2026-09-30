@@ -405,20 +405,22 @@ export function Track2D({
       const driverList = Object.values(drivers);
       for (const drv of driverList) {
         const isFocused = focusedDriver?.code === drv.code;
+        const isPitting = Boolean(drv.is_pitting || drv.pitStatus?.includes("PIT"));
+        const markerColor = isPitting ? "#F59E0B" : drv.teamColor;
 
         // Halo / Pulsing Ring
         ctx.beginPath();
         ctx.arc(drv.x, drv.y, isFocused ? 9 : 6, 0, Math.PI * 2);
-        ctx.fillStyle = drv.teamColor;
-        ctx.shadowColor = drv.teamColor;
-        ctx.shadowBlur = isFocused ? 12 : 5;
+        ctx.fillStyle = markerColor;
+        ctx.shadowColor = markerColor;
+        ctx.shadowBlur = isPitting ? 14 : isFocused ? 12 : 5;
         ctx.fill();
         ctx.shadowBlur = 0;
 
         // Inner Dot
         ctx.beginPath();
         ctx.arc(drv.x, drv.y, isFocused ? 4 : 3, 0, Math.PI * 2);
-        ctx.fillStyle = "#FFFFFF";
+        ctx.fillStyle = isPitting ? "#FEF3C7" : "#FFFFFF";
         ctx.fill();
 
         // Driver Label (Tag) - Always kept upright and readable
@@ -428,21 +430,21 @@ export function Track2D({
           ctx.scale(1 / fitScale, -1 / fitScale);
           ctx.rotate(-currentRotationRef.current); // Counter-rotate so tag is upright
 
-          const tagText = drv.code;
-          ctx.font = isFocused ? "bold 11px monospace" : "10px monospace";
+          const tagText = isPitting ? `${drv.code} PIT` : drv.code;
+          ctx.font = isFocused || isPitting ? "bold 11px monospace" : "10px monospace";
           const textWidth = ctx.measureText(tagText).width;
           const padX = 4;
 
-          ctx.fillStyle = "rgba(11, 14, 20, 0.85)";
-          ctx.strokeStyle = drv.teamColor;
-          ctx.lineWidth = isFocused ? 1.5 : 1;
+          ctx.fillStyle = isPitting ? "rgba(24, 18, 5, 0.95)" : "rgba(11, 14, 20, 0.85)";
+          ctx.strokeStyle = markerColor;
+          ctx.lineWidth = isPitting || isFocused ? 1.5 : 1;
           ctx.beginPath();
           ctx.roundRect(-textWidth / 2 - padX, -22, textWidth + padX * 2, 15, 3);
           ctx.fill();
           ctx.stroke();
 
           // Tag Text
-          ctx.fillStyle = "#FFFFFF";
+          ctx.fillStyle = isPitting ? "#FDE68A" : "#FFFFFF";
           ctx.textAlign = "center";
           ctx.fillText(tagText, 0, -11);
 
