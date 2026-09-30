@@ -79,6 +79,9 @@ class CircuitGeometry(BaseModel):
     turns: List[TurnMarker] = []
     drs_zones: List[DRSZone] = []
     track_length_m: float = 0.0
+    left_edge: Optional[List[List[float]]] = None
+    right_edge: Optional[List[List[float]]] = None
+    pit_lane: Optional[List[List[float]]] = None
 
 
 # ---------------------------------------------------------------------------

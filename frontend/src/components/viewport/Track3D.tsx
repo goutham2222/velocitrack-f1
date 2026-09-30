@@ -10,13 +10,24 @@ interface Track3DProps {
 }
 
 export function Track3D({ circuit }: Track3DProps) {
-  const { ribbonGeometry, kerbLeftGeometry, kerbRightGeometry, centerlinePoints } = useMemo(() => {
+  const {
+    ribbonGeometry,
+    kerbLeftGeometry,
+    kerbRightGeometry,
+    centerlinePoints,
+    pitRibbonGeometry,
+    pitBorderGeometry,
+    midPitPoint,
+  } = useMemo(() => {
     if (!circuit || !circuit.centerline || circuit.centerline.length < 3) {
       return {
         ribbonGeometry: null,
         kerbLeftGeometry: null,
         kerbRightGeometry: null,
         centerlinePoints: [],
+        pitRibbonGeometry: null,
+        pitBorderGeometry: null,
+        midPitPoint: null,
       };
     }
 
@@ -93,11 +104,84 @@ export function Track3D({ circuit }: Track3DProps) {
     kerbRightGeo.setIndex(kerbIndices);
     kerbRightGeo.computeVertexNormals();
 
+    // Generate Dedicated 3D Pit Stop Lane
+    let pitRibbonGeo: THREE.BufferGeometry | null = null;
+    let pitBorderGeo: THREE.BufferGeometry | null = null;
+    let midPitPt: THREE.Vector3 | null = null;
+
+    if (circuit.pit_lane && circuit.pit_lane.length >= 3) {
+      const pitPts = circuit.pit_lane.map(
+        (p) => new THREE.Vector3(p[0], (p[2] || 0.1) + 0.05, -p[1])
+      );
+      const pitCurve = new THREE.CatmullRomCurve3(pitPts, false);
+      const numPitPoints = Math.min(240, Math.max(50, circuit.pit_lane.length * 2));
+      const pitSamplePoints = pitCurve.getPoints(numPitPoints);
+
+      const pitWidth = 5.0; // Clean 5m pit lane road
+      const pitBorderWidth = 0.35;
+      const pitVerts: number[] = [];
+      const pitIndices: number[] = [];
+      const borderVerts: number[] = [];
+      const borderIndices: number[] = [];
+
+      for (let i = 0; i <= numPitPoints; i++) {
+        const pt = pitSamplePoints[i];
+        const nextPt = pitSamplePoints[Math.min(numPitPoints, i + 1)];
+        const prevPt = pitSamplePoints[Math.max(0, i - 1)];
+        const tangent = new THREE.Vector3().subVectors(nextPt, prevPt).normalize();
+        const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
+
+        const left = new THREE.Vector3().copy(pt).addScaledVector(normal, pitWidth / 2);
+        const right = new THREE.Vector3().copy(pt).addScaledVector(normal, -pitWidth / 2);
+
+        pitVerts.push(left.x, left.y, left.z);
+        pitVerts.push(right.x, right.y, right.z);
+
+        // Luminous amber speed-limiter borders
+        const outerLeft = new THREE.Vector3().copy(left).addScaledVector(normal, pitBorderWidth);
+        const outerRight = new THREE.Vector3().copy(right).addScaledVector(normal, -pitBorderWidth);
+
+        borderVerts.push(left.x, left.y + 0.02, left.z);
+        borderVerts.push(outerLeft.x, outerLeft.y + 0.02, outerLeft.z);
+        borderVerts.push(right.x, right.y + 0.02, right.z);
+        borderVerts.push(outerRight.x, outerRight.y + 0.02, outerRight.z);
+
+        if (i < numPitPoints) {
+          const base = i * 2;
+          pitIndices.push(base, base + 2, base + 1);
+          pitIndices.push(base + 1, base + 2, base + 3);
+
+          const bBase = i * 4;
+          // Left amber border
+          borderIndices.push(bBase, bBase + 4, bBase + 1);
+          borderIndices.push(bBase + 1, bBase + 4, bBase + 5);
+          // Right amber border
+          borderIndices.push(bBase + 2, bBase + 6, bBase + 3);
+          borderIndices.push(bBase + 3, bBase + 6, bBase + 7);
+        }
+      }
+
+      pitRibbonGeo = new THREE.BufferGeometry();
+      pitRibbonGeo.setAttribute("position", new THREE.Float32BufferAttribute(pitVerts, 3));
+      pitRibbonGeo.setIndex(pitIndices);
+      pitRibbonGeo.computeVertexNormals();
+
+      pitBorderGeo = new THREE.BufferGeometry();
+      pitBorderGeo.setAttribute("position", new THREE.Float32BufferAttribute(borderVerts, 3));
+      pitBorderGeo.setIndex(borderIndices);
+      pitBorderGeo.computeVertexNormals();
+
+      midPitPt = pitSamplePoints[Math.floor(numPitPoints / 2)];
+    }
+
     return {
       ribbonGeometry: ribbonGeo,
       kerbLeftGeometry: kerbLeftGeo,
       kerbRightGeometry: kerbRightGeo,
       centerlinePoints: pts,
+      pitRibbonGeometry: pitRibbonGeo,
+      pitBorderGeometry: pitBorderGeo,
+      midPitPoint: midPitPt,
     };
   }, [circuit]);
 
@@ -136,6 +220,43 @@ export function Track3D({ circuit }: Track3DProps) {
             side={THREE.DoubleSide}
           />
         </mesh>
+      )}
+
+      {/* Dedicated 3D Pit Stop Lane Ribbon */}
+      {pitRibbonGeometry && (
+        <mesh geometry={pitRibbonGeometry} receiveShadow>
+          <meshStandardMaterial
+            color="#0d1117"
+            roughness={0.9}
+            metalness={0.1}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+
+      {/* Pit Stop Lane Luminous Amber Borders */}
+      {pitBorderGeometry && (
+        <mesh geometry={pitBorderGeometry}>
+          <meshBasicMaterial
+            color="#F59E0B"
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+
+      {/* Floating 3D Overhead Pit Lane Sign */}
+      {midPitPoint && (
+        <Html
+          position={[midPitPoint.x, midPitPoint.y + 6.5, midPitPoint.z]}
+          center
+          distanceFactor={140}
+          zIndexRange={[90, 0]}
+        >
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/90 border border-amber-500/80 text-[10px] font-mono font-black tracking-widest text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.6)] pointer-events-none select-none whitespace-nowrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span>PIT LANE • 80 KM/H</span>
+          </div>
+        </Html>
       )}
 
       {/* High-Visibility Start / Finish Line & Illuminated Overhead Gantry */}

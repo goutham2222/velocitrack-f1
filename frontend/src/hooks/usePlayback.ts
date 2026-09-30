@@ -273,6 +273,12 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     const leaderboard: LeaderboardEntry[] = [];
     const leaderDist = leaderboardRaw.length > 0 ? leaderboardRaw[0].distance : 0;
     const leaderLap = leaderboardRaw.length > 0 ? leaderboardRaw[0].driver.lap : 1;
+    const circuitLength =
+      payload?.circuit?.track_length_m && payload.circuit.track_length_m > 500
+        ? payload.circuit.track_length_m
+        : 5000;
+
+    let prevLeaderSec = 0;
 
     for (let i = 0; i < leaderboardRaw.length; i++) {
       const item = leaderboardRaw[i];
@@ -286,24 +292,36 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         const distToPrev = Math.max(0, prevItem.distance - item.distance);
         const distToLeader = Math.max(0, leaderDist - item.distance);
 
-        // Stable race pace reference prevents erratic gap spikes during pit stops or hairpins
+        // Uniform reference race pace for the entire pack on this frame:
+        // Converts spatial meters smoothly and reliably to timing gaps
         const leaderSpeed = leaderboardRaw[0].driver.speed;
         const racePaceMs = Math.max(35, (leaderSpeed > 40 ? leaderSpeed : 180) / 3.6);
-        const leaderSec = distToLeader / racePaceMs;
+        let leaderSec = distToLeader / racePaceMs;
 
-        const aheadSpeed = prevItem.driver.speed > 40 ? prevItem.driver.speed : 180;
-        const intervalSpeedMs = Math.max(25, (drv.speed > 40 ? drv.speed + aheadSpeed : aheadSpeed * 2) / 2 / 3.6);
-        const intervalSec = distToPrev / intervalSpeedMs;
+        // Enforce strictly monotonic non-decreasing gaps down the timing tower
+        // Eliminates out-of-order gap anomalies (Issue 2)
+        if (leaderSec <= prevLeaderSec) {
+          leaderSec = prevLeaderSec + 0.01;
+        }
+        prevLeaderSec = leaderSec;
 
-        if (leaderLap - drv.lap >= 1) {
-          const lapsBehind = leaderLap - drv.lap;
+        const intervalSec = distToPrev / racePaceMs;
+
+        // Issue 1: A driver is only genuinely a lap down if physically separated
+        // by at least 75% of a full circuit lap (or >= 60 seconds).
+        // Crossing the start/finish line seam a few seconds after the leader
+        // MUST keep showing their live second delta, NOT "+1 LAP".
+        const isLapped = distToLeader >= circuitLength * 0.75;
+
+        if (isLapped) {
+          const lapsBehind = Math.max(1, Math.round(distToLeader / circuitLength));
           gapToLeader = `+${lapsBehind} ${lapsBehind === 1 ? "LAP" : "LAPS"}`;
         } else {
           gapToLeader = `+${leaderSec.toFixed(3)}s`;
         }
 
         intervalToAhead = `+${intervalSec.toFixed(3)}s`;
-        drsThreat = intervalSec <= 1.0;
+        drsThreat = !isLapped && intervalSec <= 1.0;
       }
 
       leaderboard.push({

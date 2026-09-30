@@ -107,6 +107,9 @@ def generate_monaco_circuit() -> Tuple[CircuitGeometry, np.ndarray, np.ndarray, 
         seg_lengths = np.linalg.norm(deltas, axis=1)
         cum_dist = np.insert(np.cumsum(seg_lengths), 0, 0.0)
         total_length = float(cum_dist[-1])
+        if not circuit.pit_lane:
+            from app.services.interpolator import generate_pit_lane
+            circuit.pit_lane = generate_pit_lane(circuit.centerline, total_length, offset_dist=-10.0)
         return circuit, dense_points, cum_dist, total_length
 
     # Fallback to parametric generation if JSON is unavailable
@@ -158,6 +161,9 @@ def generate_monaco_circuit() -> Tuple[CircuitGeometry, np.ndarray, np.ndarray, 
 
     centerline_list = [[round(p[0], 2), round(p[1], 2), round(p[2], 2)] for p in dense_points[::2]]
 
+    from app.services.interpolator import generate_pit_lane
+    pit_lane = generate_pit_lane(centerline_list, total_length, offset_dist=-10.0)
+
     geometry = CircuitGeometry(
         circuit_name="Circuit de Monaco",
         rotation=0.0,
@@ -166,6 +172,7 @@ def generate_monaco_circuit() -> Tuple[CircuitGeometry, np.ndarray, np.ndarray, 
         turns=turns,
         drs_zones=drs_zones,
         track_length_m=round(total_length, 1),
+        pit_lane=pit_lane,
     )
     return geometry, dense_points, cum_dist, total_length
 
@@ -279,9 +286,11 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
             # Slight racing line offset based on driver number (pit lane offset if pitting)
             lateral_offset = (math.sin(t * 0.5 + rank) * 0.4)
             if is_driver_pitting:
-                lateral_offset += 2.8  # Branch into pit lane
-            pos[0] += lateral_offset
-            pos[1] += lateral_offset * 0.5
+                # Monaco pit lane runs parallel along harbour straight offset by ~9.8m towards +X
+                pos[0] += 9.8
+            else:
+                pos[0] += lateral_offset
+                pos[1] += lateral_offset * 0.5
 
             # Speed calculation based on track position or pit limiter
             if is_driver_pitting:

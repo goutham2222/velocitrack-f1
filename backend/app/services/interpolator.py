@@ -36,6 +36,102 @@ TEAM_COLORS = {
 }
 
 
+def generate_pit_lane(
+    centerline: List[List[float]],
+    track_length: float,
+    session=None,
+    scale: float = 0.1,
+    offset_dist: Optional[float] = None,
+) -> List[List[float]]:
+    """
+    Synthesizes authentic pit lane road geometry alongside the start/finish straight.
+    Detects lateral pit side from real pit telemetry if available; otherwise uses a
+    standard parallel offset with smooth cosine entry and exit tapers.
+    """
+    if not centerline or len(centerline) < 3 or track_length <= 0:
+        return []
+
+    pts = np.array(centerline)
+    N = len(pts)
+    diffs = np.diff(pts, axis=0, append=pts[:1])
+    seg_lens = np.linalg.norm(diffs, axis=1)
+    cum_dists = np.concatenate([[0.0], np.cumsum(seg_lens)[:-1]])
+
+    if offset_dist is None:
+        offset_dist = 14.0
+        # If session has pit telemetry, detect which side (normal sign) the pit lane is on
+        if session is not None and hasattr(session, "laps") and session.laps is not None and not session.laps.empty:
+            try:
+                pit_laps = session.laps[session.laps["PitInTime"].notna()]
+                if not pit_laps.empty:
+                    sample_lap = pit_laps.iloc[0]
+                    p_in = sample_lap["PitInTime"].total_seconds() if hasattr(sample_lap["PitInTime"], "total_seconds") else None
+                    if p_in is not None:
+                        tel = sample_lap.get_telemetry()
+                        if not tel.empty and "SessionTime" in tel and "X" in tel and "Y" in tel:
+                            t = tel["SessionTime"].dt.total_seconds().to_numpy()
+                            mask = (t >= p_in) & (t <= p_in + 20.0)
+                            pit_pts = tel[mask]
+                            if len(pit_pts) >= 5:
+                                px = pit_pts["X"].to_numpy() * scale
+                                py = pit_pts["Y"].to_numpy() * scale
+                                p0 = np.array(centerline[0][:2])
+                                p1 = np.array(centerline[1][:2])
+                                t_dir = (p1 - p0) / max(1e-3, float(np.hypot(p1[0] - p0[0], p1[1] - p0[1])))
+                                norm_2d = np.array([-t_dir[1], t_dir[0]])
+                                diffs_xy = np.column_stack([px - p0[0], py - p0[1]])
+                                dots = np.dot(diffs_xy, norm_2d)
+                                med_dot = float(np.median(dots))
+                                if abs(med_dot) > 3.0:
+                                    offset_dist = 14.0 if med_dot > 0 else -14.0
+            except Exception as e:
+                logger.debug(f"Pit sign detection fallback: {e}")
+
+    # Start line is at index 0 (s = 0.0 and s = track_length)
+    entry_s = max(0.0, track_length - 280.0)
+    exit_s = min(track_length, 220.0)
+
+    s_before = np.linspace(entry_s, track_length, 45, endpoint=False)
+    s_after = np.linspace(0.0, exit_s, 35, endpoint=True)
+    pit_s_vals = np.concatenate([s_before, s_after])
+
+    pit_points = []
+    for s in pit_s_vals:
+        idx = int(np.searchsorted(cum_dists, s, side="right")) - 1
+        idx = max(0, min(N - 1, idx))
+        next_idx = (idx + 1) % N
+
+        d0 = cum_dists[idx]
+        seg_len = max(1e-3, seg_lens[idx])
+        alpha = max(0.0, min(1.0, (s - d0) / seg_len))
+
+        base_pt = (1.0 - alpha) * pts[idx] + alpha * pts[next_idx]
+
+        tangent = pts[next_idx][:2] - pts[idx][:2]
+        t_len = float(np.linalg.norm(tangent))
+        t_dir = np.array([1.0, 0.0]) if t_len < 1e-3 else (tangent / t_len)
+        normal = np.array([-t_dir[1], t_dir[0]])
+
+        # Smooth Hermite/Cosine Taper
+        if s >= entry_s:
+            dist_from_entry = s - entry_s
+            taper_len = 80.0
+            scale_fac = 0.5 * (1.0 - math.cos(math.pi * (dist_from_entry / taper_len))) if dist_from_entry < taper_len else 1.0
+        else:
+            dist_to_exit = exit_s - s
+            taper_len = 80.0
+            scale_fac = 0.5 * (1.0 - math.cos(math.pi * (dist_to_exit / taper_len))) if dist_to_exit < taper_len else 1.0
+
+        pit_pt = [
+            round(float(base_pt[0] + normal[0] * offset_dist * scale_fac), 2),
+            round(float(base_pt[1] + normal[1] * offset_dist * scale_fac), 2),
+            round(float(base_pt[2] + 0.05), 2),
+        ]
+        pit_points.append(pit_pt)
+
+    return pit_points
+
+
 def build_replay_payload_from_session(
     session,
     lap_start: int = 1,
@@ -193,6 +289,13 @@ def build_replay_payload_from_session(
             SectorBoundary(sector=3, start_distance=total_track_length * 0.67, end_distance=total_track_length),
         ]
 
+        pit_lane = generate_pit_lane(
+            centerline=centerline,
+            track_length=total_track_length,
+            session=session,
+            scale=scale,
+        )
+
         circuit_geometry = CircuitGeometry(
             circuit_name=str(session.event.get("EventName", "Grand Prix")),
             rotation=0.0,
@@ -207,6 +310,7 @@ def build_replay_payload_from_session(
                 )
             ],
             track_length_m=round(total_track_length, 1),
+            pit_lane=pit_lane,
         )
 
     # 3. Synchronize drivers & compute monotonic track progress

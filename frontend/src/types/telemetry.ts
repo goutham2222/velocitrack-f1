@@ -54,6 +54,9 @@ export interface CircuitGeometry {
   turns: TurnMarker[];
   drs_zones: DRSZone[];
   track_length_m: number;
+  left_edge?: number[][];
+  right_edge?: number[][];
+  pit_lane?: number[][];
 }
 
 export interface DriverReplayStream {

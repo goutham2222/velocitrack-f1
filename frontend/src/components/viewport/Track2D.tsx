@@ -339,6 +339,49 @@ export function Track2D({
         ctx.lineWidth = 4;
         ctx.stroke();
 
+        // Draw Dedicated Amber Pit Stop Lane
+        if (circuit.pit_lane && circuit.pit_lane.length > 2) {
+          ctx.beginPath();
+          ctx.moveTo(circuit.pit_lane[0][0], circuit.pit_lane[0][1]);
+          for (let i = 1; i < circuit.pit_lane.length; i++) {
+            ctx.lineTo(circuit.pit_lane[i][0], circuit.pit_lane[i][1]);
+          }
+          // Luminous amber road underlay
+          ctx.strokeStyle = "rgba(245, 158, 11, 0.4)";
+          ctx.lineWidth = 6;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.stroke();
+
+          // High-visibility dashed pit speed limiter line
+          ctx.strokeStyle = "#F59E0B";
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([8, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]); // Reset to solid
+
+          // Tactical PIT LANE badge at midpoint of pit lane
+          const midIdx = Math.floor(circuit.pit_lane.length / 2);
+          const midPt = circuit.pit_lane[midIdx];
+          ctx.save();
+          ctx.translate(midPt[0], midPt[1]);
+          ctx.scale(1 / fitScale, -1 / fitScale);
+          ctx.rotate(-currentRotationRef.current);
+          ctx.fillStyle = "rgba(245, 158, 11, 0.95)";
+          ctx.beginPath();
+          ctx.roundRect(-22, -18, 44, 12, 3);
+          ctx.fill();
+          ctx.strokeStyle = "#78350F";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.fillStyle = "#000000";
+          ctx.font = "bold 7px monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("PIT LANE", 0, -12);
+          ctx.restore();
+        }
+
         // Prominent High-Visibility Start / Finish Line
         const p0 = circuit.centerline[0];
         const p1 = circuit.centerline[1] || p0;
