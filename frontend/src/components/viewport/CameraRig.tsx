@@ -215,19 +215,54 @@ export function CameraRig({
         -focusedDriver.y
       );
 
-      // Desired camera target: looking slightly ahead of the driver
-      const targetLook = new THREE.Vector3(
-        driverPos.x,
-        driverPos.y + 1.5,
-        driverPos.z
-      );
+      // Determine track forward tangent at driver position
+      const forwardTangent = new THREE.Vector3(0, 0, 1);
+      if (circuit && circuit.centerline && circuit.centerline.length > 2) {
+        const cl = circuit.centerline;
+        let minDistSq = Infinity;
+        let closestIdx = 0;
+        // Fast coarse search every 4 points
+        for (let i = 0; i < cl.length; i += 4) {
+          const cx = cl[i][0];
+          const cz = -cl[i][1];
+          const dSq = (cx - driverPos.x) ** 2 + (cz - driverPos.z) ** 2;
+          if (dSq < minDistSq) {
+            minDistSq = dSq;
+            closestIdx = i;
+          }
+        }
+        // Local refinement search
+        const startSearch = Math.max(0, closestIdx - 4);
+        const endSearch = Math.min(cl.length - 1, closestIdx + 4);
+        for (let i = startSearch; i <= endSearch; i++) {
+          const cx = cl[i][0];
+          const cz = -cl[i][1];
+          const dSq = (cx - driverPos.x) ** 2 + (cz - driverPos.z) ** 2;
+          if (dSq < minDistSq) {
+            minDistSq = dSq;
+            closestIdx = i;
+          }
+        }
+        const nextIdx = (closestIdx + 1) % cl.length;
+        forwardTangent.set(
+          cl[nextIdx][0] - cl[closestIdx][0],
+          0,
+          -cl[nextIdx][1] - (-cl[closestIdx][1])
+        ).normalize();
+      }
 
-      // Desired camera position: close-up elevated chase angle
-      const desiredCamPos = new THREE.Vector3(
-        driverPos.x + 25.0,
-        driverPos.y + 20.0,
-        driverPos.z + 25.0
-      );
+      // Authentic broadcast rear chase camera:
+      // Positioned behind the car along the racing line and elevated
+      const desiredCamPos = new THREE.Vector3()
+        .copy(driverPos)
+        .addScaledVector(forwardTangent, -26.0)
+        .add(new THREE.Vector3(0, 14.0, 0));
+
+      // Camera target looking ahead down the track
+      const targetLook = new THREE.Vector3()
+        .copy(driverPos)
+        .addScaledVector(forwardTangent, 18.0)
+        .add(new THREE.Vector3(0, 1.8, 0));
 
       // Smooth damping for cinematic broadcast tracking
       const lerpSpeed = Math.min(1.0, delta * 4.5);

@@ -51,7 +51,7 @@ export function Leaderboard({
             <div className="flex items-center gap-2">
               <span className="w-16 text-right">GAP</span>
               <span className="w-5 text-center">TYRE</span>
-              <span className="w-6 text-right">AGE</span>
+              <span className="w-8 text-right">LAP</span>
             </div>
           </div>
 
@@ -118,12 +118,12 @@ export function Leaderboard({
                       {entry.compound.charAt(0).toUpperCase()}
                     </div>
 
-                    {/* Tyre life */}
+                    {/* Driver Current Race Lap */}
                     <span
-                      className="text-[10px] font-mono text-slate-400 w-6 text-right"
-                      title={`Tyre age: ${entry.tyreLife} laps on ${entry.compound}`}
+                      className="text-[10px] font-mono font-bold text-slate-300 w-8 text-right"
+                      title={`Current Race Lap: ${entry.lap} (${entry.compound} tyre, ${entry.tyreLife} laps old)`}
                     >
-                      {entry.tyreLife}L
+                      L{entry.lap}
                     </span>
                   </div>
                 </div>

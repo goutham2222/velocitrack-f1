@@ -292,10 +292,9 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         const distToPrev = Math.max(0, prevItem.distance - item.distance);
         const distToLeader = Math.max(0, leaderDist - item.distance);
 
-        // Uniform reference race pace for the entire pack on this frame:
+        // Uniform reference race pace for the entire pack:
         // Converts spatial meters smoothly and reliably to timing gaps
-        const leaderSpeed = leaderboardRaw[0].driver.speed;
-        const racePaceMs = Math.max(35, (leaderSpeed > 40 ? leaderSpeed : 180) / 3.6);
+        const racePaceMs = Math.max(45, circuitLength / 95);
         let leaderSec = distToLeader / racePaceMs;
 
         // Enforce strictly monotonic non-decreasing gaps down the timing tower

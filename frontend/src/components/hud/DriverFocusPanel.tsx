@@ -148,9 +148,9 @@ export function DriverFocusPanel({
           </strong>
         </span>
         <span className="text-slate-400">
-          TYRE:{" "}
+          LAP: <strong className="text-slate-200">L{driver.lap}</strong> • TYRE:{" "}
           <strong className="text-slate-200">
-            {driver.compound} (L{driver.tyreLife})
+            {driver.compound} ({driver.tyreLife}L)
           </strong>
         </span>
       </div>
