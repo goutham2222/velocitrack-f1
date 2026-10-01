@@ -92,6 +92,7 @@ export interface DriverReplayStream {
   is_pitting?: boolean[];
   pit_duration?: (number | null)[];
   has_finished?: boolean[];
+  is_dnf?: boolean;
 }
 
 export interface TelemetrySample {
@@ -112,6 +113,7 @@ export interface TelemetrySample {
   is_pitting: boolean;
   pit_duration?: number | null;
   has_finished?: boolean;
+  is_dnf?: boolean;
 }
 
 export interface WeatherSample {
@@ -176,6 +178,7 @@ export interface InterpolatedDriverState {
   is_pitting: boolean;
   pit_duration?: number | null;
   has_finished?: boolean;
+  is_dnf?: boolean;
 }
 
 export interface LeaderboardEntry {
@@ -195,6 +198,7 @@ export interface LeaderboardEntry {
   inPit: boolean;
   pitDuration?: number | null;
   hasFinished?: boolean;
+  isDnf?: boolean;
   officialStatus?: string;
 }
 

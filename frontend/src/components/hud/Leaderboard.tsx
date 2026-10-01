@@ -49,7 +49,7 @@ export function Leaderboard({
           <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-white/5 text-[9px] font-mono text-slate-400 uppercase tracking-wider">
             <span>POS / DRIVER</span>
             <div className="flex items-center gap-2">
-              <span className="w-16 text-right">GAP</span>
+              <span className="w-20 text-right">GAP</span>
               <span className="w-5 text-center">TYRE</span>
               <span className="w-8 text-right">LAP</span>
             </div>
@@ -68,6 +68,8 @@ export function Leaderboard({
                   className={`flex items-center justify-between px-3 py-1.5 cursor-pointer transition-colors duration-100 ${
                     isSelected
                       ? "bg-white/10 border-l-4 border-l-white"
+                      : entry.isDnf
+                      ? "bg-rose-500/5 hover:bg-rose-500/10 border-l-4 border-l-rose-500/40 opacity-75"
                       : entry.inPit
                       ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
                       : "hover:bg-white/5 border-l-4 border-l-transparent"
@@ -85,7 +87,15 @@ export function Leaderboard({
                     <span className="font-mono text-xs font-bold text-slate-100 tracking-wide">
                       {entry.code}
                     </span>
-                    {entry.inPit && (
+                    {entry.isDnf && (
+                      <span
+                        title="Did Not Finish (DNF)"
+                        className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[9px] font-mono font-bold border border-rose-500/40 flex items-center gap-1"
+                      >
+                        DNF
+                      </span>
+                    )}
+                    {entry.inPit && !entry.isDnf && (
                       <span
                         title={entry.pitDuration ? `In Pit Lane: ${entry.pitDuration.toFixed(1)}s` : "In Pit Lane"}
                         className="px-1.5 py-0.5 rounded bg-amber-500 text-black text-[9px] font-mono font-black uppercase tracking-wider border border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.6)] animate-pulse flex items-center gap-1"
@@ -94,7 +104,7 @@ export function Leaderboard({
                         PIT{entry.pitDuration ? ` ${entry.pitDuration.toFixed(0)}s` : ""}
                       </span>
                     )}
-                    {entry.hasFinished && (
+                    {entry.hasFinished && !entry.isDnf && (
                       <span
                         title="Finished Race"
                         className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold border border-emerald-500/40 flex items-center gap-1"
@@ -102,7 +112,7 @@ export function Leaderboard({
                         FIN
                       </span>
                     )}
-                    {entry.drsThreat && entry.position > 1 && !entry.inPit && !entry.hasFinished && (
+                    {entry.drsThreat && entry.position > 1 && !entry.inPit && !entry.hasFinished && !entry.isDnf && (
                       <span
                         title="DRS threat within 1.0s"
                         className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold border border-emerald-500/40 animate-pulse"
@@ -115,15 +125,23 @@ export function Leaderboard({
                   {/* Right: Gap, Compound & Race Lap */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span
-                      className={`font-mono text-[11px] w-16 text-right ${
-                        entry.inPit
+                      className={`font-mono text-[11px] w-20 text-right ${
+                        entry.isDnf
+                          ? "text-rose-400 font-bold"
+                          : entry.inPit
                           ? "text-amber-400 font-bold"
                           : entry.gapToLeader === "WINNER"
                           ? "text-yellow-400 font-black tracking-wide"
                           : "text-slate-300 font-medium"
                       }`}
                     >
-                      {entry.inPit ? "PIT" : (entry.position === 1 ? (entry.hasFinished ? "WINNER" : "LEADER") : entry.gapToLeader)}
+                      {entry.isDnf
+                        ? "DNF"
+                        : entry.inPit
+                        ? "PIT"
+                        : entry.position === 1
+                        ? (entry.hasFinished ? "WINNER" : "LEADER")
+                        : entry.gapToLeader}
                     </span>
 
                     {/* Compound badge */}

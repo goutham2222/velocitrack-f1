@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from typing import List, Dict, Any, Optional
 import fastf1
@@ -145,9 +146,57 @@ def get_event_details(year: int, event_name_or_round: str) -> EventDetailsRespon
             SessionInfo(name="Race", code="R", date=matched.event_date),
         ]
 
-    # Typical race total laps based on circuit length
-    loc = matched.location.lower()
-    total_laps = 78 if "monaco" in loc else (53 if "monza" in loc or "suzuka" in loc else (70 if "hungary" in loc else 57))
+    # Official Grand Prix total laps defined by FIA Sporting Regulations for each venue
+    OFFICIAL_CIRCUIT_LAPS = [
+        # Match specific event names or locations first before broad country terms
+        ([r"\blas vegas\b", r"\bvegas\b"], 50),
+        ([r"\bmiami\b"], 57),
+        ([r"\bunited states\b", r"\baustin\b", r"\bcota\b", r"\bamericas\b"], 56),
+        ([r"\bemilia\b", r"\bimola\b", r"\bromagna\b"], 63),
+        ([r"\bitalian\b", r"\bmonza\b"], 53),
+        ([r"\bbahrain\b", r"\bsakhir\b"], 57),
+        ([r"\bsaudi\b", r"\bjeddah\b"], 50),
+        ([r"\baustralia\b", r"\baustralian\b", r"\bmelbourne\b", r"\balbert park\b"], 58),
+        ([r"\bjapan\b", r"\bjapanese\b", r"\bsuzuka\b"], 53),
+        ([r"\bchina\b", r"\bchinese\b", r"\bshanghai\b"], 56),
+        ([r"\bmonaco\b", r"\bmonte carlo\b"], 78),
+        ([r"\bcanada\b", r"\bcanadian\b", r"\bmontreal\b", r"\bmontréal\b", r"\bgilles\b"], 70),
+        ([r"\bspain\b", r"\bspanish\b", r"\bbarcelona\b", r"\bcatalunya\b"], 66),
+        ([r"\baustria\b", r"\baustrian\b", r"\bspielberg\b", r"\bred bull ring\b"], 71),
+        ([r"\bbritish\b", r"\bsilverstone\b", r"\bgreat britain\b"], 52),
+        ([r"\bhungary\b", r"\bhungarian\b", r"\bbudapest\b", r"\bhungaroring\b"], 70),
+        ([r"\bbelgium\b", r"\bbelgian\b", r"\bspa\b", r"\bfrancorchamps\b"], 44),
+        ([r"\bnetherlands\b", r"\bdutch\b", r"\bzandvoort\b"], 72),
+        ([r"\bazerbaijan\b", r"\bbaku\b"], 51),
+        ([r"\bsingapore\b", r"\bmarina bay\b"], 62),
+        ([r"\bmexico\b", r"\bmexican\b", r"\bmexico city\b", r"\brodriguez\b"], 71),
+        ([r"\bbrazil\b", r"\bbrazilian\b", r"\bsão paulo\b", r"\bsao paulo\b", r"\binterlagos\b"], 71),
+        ([r"\bqatar\b", r"\blusail\b", r"\blosail\b"], 57),
+        ([r"\babu dhabi\b", r"\byas marina\b", r"\byas island\b", r"\byas\b"], 58),
+    ]
+
+    event_str = matched.event_name.lower()
+    loc_str = matched.location.lower()
+    country_str = matched.country.lower()
+
+    total_laps = 57
+    # 1. Match event name
+    for patterns, laps in OFFICIAL_CIRCUIT_LAPS:
+        if any(re.search(p, event_str) for p in patterns):
+            total_laps = laps
+            break
+    else:
+        # 2. Match location
+        for patterns, laps in OFFICIAL_CIRCUIT_LAPS:
+            if any(re.search(p, loc_str) for p in patterns):
+                total_laps = laps
+                break
+        else:
+            # 3. Match country
+            for patterns, laps in OFFICIAL_CIRCUIT_LAPS:
+                if any(re.search(p, country_str) for p in patterns):
+                    total_laps = laps
+                    break
 
     drivers = [
         "VER", "NOR", "LEC", "PIA", "SAI", "HAM", "RUS", "PER",
@@ -168,9 +217,14 @@ def get_event_details(year: int, event_name_or_round: str) -> EventDetailsRespon
 def load_fastf1_session(year: int, event_name: str, session_code: str):
     """
     Loads session via FastF1 with full caching.
+    Resilient fallback if live timing weather feeds fail.
     """
     session = fastf1.get_session(year, event_name, session_code)
-    session.load(telemetry=True, laps=True, weather=True)
+    try:
+        session.load(telemetry=True, laps=True, weather=True, messages=False)
+    except Exception as e:
+        logger.warning(f"Full session.load failed for {year} {event_name}: {e}. Retrying with telemetry and laps only...")
+        session.load(telemetry=True, laps=True, weather=False, messages=False)
     return session
 
 

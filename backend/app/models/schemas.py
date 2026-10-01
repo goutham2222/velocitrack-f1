@@ -106,6 +106,7 @@ class TelemetrySample(BaseModel):
     is_pitting: bool = False
     pit_duration: Optional[float] = None
     has_finished: bool = False
+    is_dnf: bool = False
 
 
 class OfficialResult(BaseModel):
@@ -141,6 +142,7 @@ class DriverReplayStream(BaseModel):
     is_pitting: List[bool] = Field(default_factory=list)
     pit_duration: Optional[List[Optional[float]]] = None
     has_finished: List[bool] = Field(default_factory=list)
+    is_dnf: bool = False
 
 
 class WeatherSample(BaseModel):

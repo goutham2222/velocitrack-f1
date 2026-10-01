@@ -166,6 +166,77 @@ def extract_official_results(session) -> List[OfficialResult]:
         has_results = False
 
     if not has_results:
+        # Fallback: compute authentic official classifications directly from session.laps
+        try:
+            laps_df = getattr(session, "laps", None)
+            if laps_df is not None and not laps_df.empty:
+                max_race_laps = int(laps_df["LapNumber"].dropna().max())
+                driver_summaries = []
+                for drv_id in getattr(session, "drivers", []):
+                    drv_laps = laps_df.pick_driver(drv_id)
+                    if drv_laps.empty:
+                        continue
+                    drv_info = session.get_driver(drv_id)
+                    code_val = str(drv_info.get("Abbreviation", drv_id)).upper()
+                    num_val = int(drv_info.get("DriverNumber", 0)) if pd.notnull(drv_info.get("DriverNumber")) else None
+                    team_val = str(drv_info.get("TeamName", ""))
+                    valid_laps = drv_laps[drv_laps["Time"].notna()]
+                    if valid_laps.empty:
+                        max_l = 0
+                        last_t = pd.Timedelta(days=99)
+                    else:
+                        last_row = valid_laps.iloc[-1]
+                        max_l = int(last_row["LapNumber"])
+                        last_t = last_row["Time"]
+
+                    is_dnf = max_l < max_race_laps * 0.75
+                    driver_summaries.append({
+                        "code": code_val,
+                        "num": num_val,
+                        "team": team_val,
+                        "max_l": max_l,
+                        "last_t": last_t,
+                        "is_dnf": is_dnf,
+                    })
+
+                finishers = [d for d in driver_summaries if not d["is_dnf"]]
+                finishers.sort(key=lambda d: (-d["max_l"], d["last_t"]))
+                dnfs = [d for d in driver_summaries if d["is_dnf"]]
+                dnfs.sort(key=lambda d: -d["max_l"])
+                sorted_drivers = finishers + dnfs
+
+                if sorted_drivers:
+                    winner_t = sorted_drivers[0]["last_t"]
+                    for pos, d in enumerate(sorted_drivers, 1):
+                        if d["is_dnf"]:
+                            gap_val = "DNF"
+                            st_val = "DNF"
+                        elif pos == 1:
+                            gap_val = "WINNER"
+                            st_val = "Finished"
+                        elif d["max_l"] == max_race_laps:
+                            diff_s = (d["last_t"] - winner_t).total_seconds()
+                            gap_val = f"+{diff_s:.3f}s"
+                            st_val = "Finished"
+                        else:
+                            laps_down = max(1, max_race_laps - d["max_l"])
+                            gap_val = f"+{laps_down} Lap"
+                            st_val = f"+{laps_down} Lap"
+
+                        official_results.append(
+                            OfficialResult(
+                                position=pos,
+                                driver_code=d["code"],
+                                driver_number=d["num"],
+                                team=d["team"],
+                                status=st_val,
+                                points=0.0,
+                                time_or_gap=gap_val,
+                            )
+                        )
+                    return official_results
+        except Exception as fallback_err:
+            logger.warning(f"Fallback official results extraction failed: {fallback_err}")
         return []
 
     try:
@@ -200,22 +271,40 @@ def extract_official_results(session) -> List[OfficialResult]:
 
             time_str = None
             t_val = r.get("Time")
+            status_lower = status_val.lower().strip()
+            is_dnf_status = (
+                any(term in status_lower for term in [
+                    "retired", "collision", "accident", "spun", "brake", "engine",
+                    "dnf", "damage", "puncture", "power unit", "gearbox", "suspension",
+                    "electrical", "hydraulics", "radiator", "driveshaft", "overheating",
+                    "vibration", "handling", "throttle", "water pressure", "oil pressure",
+                    "disqualified", "excluded", "withdrew", "mechanical", "dsq", "nc"
+                ])
+                or (status_lower not in ["finished", "nan", ""] and "lap" not in status_lower and not status_lower.startswith("+") and pd.isna(t_val))
+            )
+
             if pos_int == 1:
                 time_str = "WINNER"
                 if pd.notnull(t_val) and hasattr(t_val, "total_seconds"):
                     winner_tot_s = t_val.total_seconds()
+            elif is_dnf_status:
+                time_str = "DNF"
+                status_val = "DNF"
+            elif "lap" in status_lower or status_lower.startswith("+"):
+                import re
+                lap_match = re.search(r"\d+", status_val)
+                laps_down = int(lap_match.group(0)) if lap_match else 1
+                time_str = f"+{laps_down} Lap"
+                status_val = f"+{laps_down} Lap"
+            elif pd.notnull(t_val) and hasattr(t_val, "total_seconds"):
+                cur_tot_s = t_val.total_seconds()
+                if winner_tot_s is not None and cur_tot_s > winner_tot_s:
+                    diff = cur_tot_s - winner_tot_s
+                    time_str = f"+{diff:.3f}s"
+                elif cur_tot_s > 0:
+                    time_str = f"+{cur_tot_s:.3f}s"
             else:
-                if pd.notnull(t_val) and hasattr(t_val, "total_seconds"):
-                    cur_tot_s = t_val.total_seconds()
-                    if winner_tot_s is not None and cur_tot_s > winner_tot_s:
-                        diff = cur_tot_s - winner_tot_s
-                        time_str = f"+{diff:.3f}s"
-                    elif cur_tot_s > 0:
-                        time_str = f"+{cur_tot_s:.3f}s"
-                elif "lap" in status_val.lower():
-                    time_str = status_val.upper()
-                elif status_val.lower() not in ["finished", "nan", ""]:
-                    time_str = status_val.upper()
+                time_str = status_val.upper()
 
             official_results.append(
                 OfficialResult(
@@ -441,37 +530,48 @@ def build_replay_payload_from_session(
                 continue
 
             # Driver's overall laps across the entire session to identify official finish milestone
-            all_drv_laps = laps_df.pick_driver(drv_id) if (laps_df is not None and not laps_df.empty) else drv_laps
-            finish_time: Optional[float] = None
-            driver_total_laps: int = session_total_laps
-            is_driver_classified_finisher: bool = False
-
-            if is_race_finish_session and all_drv_laps is not None and not all_drv_laps.empty:
-                valid_laps = all_drv_laps[all_drv_laps["Time"].notna()]
-                if not valid_laps.empty:
-                    last_lap_row = valid_laps.iloc[-1]
-                    drv_laps_count = int(last_lap_row.get("LapNumber", session_total_laps))
-                    if drv_laps_count >= session_total_laps - 1:
-                        finish_time = get_lap_end_time(last_lap_row)
-                        driver_total_laps = drv_laps_count
-                        is_driver_classified_finisher = True
-                elif not all_drv_laps.empty:
-                    last_lap_row = all_drv_laps.iloc[-1]
-                    drv_laps_count = int(last_lap_row.get("LapNumber", session_total_laps))
-                    if drv_laps_count >= session_total_laps - 1:
-                        finish_time = get_lap_end_time(last_lap_row)
-                        driver_total_laps = drv_laps_count
-                        is_driver_classified_finisher = True
-
             # Driver metadata
             drv_info = session.get_driver(drv_id)
-            code = str(drv_info.get("Abbreviation", drv_id))
+            code = str(drv_info.get("Abbreviation", drv_id)).upper()
             num = int(drv_info.get("DriverNumber", 0))
             full_name = f"{drv_info.get('FirstName', '')} {drv_info.get('LastName', '')}".strip() or code
             team = str(drv_info.get("TeamName", "Unknown Team"))
             color = TEAM_COLORS.get(team, "#FFFFFF")
             if "TeamColor" in drv_info and drv_info["TeamColor"]:
                 color = f"#{drv_info['TeamColor']}"
+
+            # Official session result alignment & DNF determination
+            official_res_map = {res.driver_code.upper(): res for res in official_results}
+            drv_official = official_res_map.get(code)
+            # Driver's overall laps across the entire session to identify official finish milestone
+            all_drv_laps = laps_df.pick_driver(drv_id) if (laps_df is not None and not laps_df.empty) else drv_laps
+            finish_time: Optional[float] = None
+            retirement_time: Optional[float] = None
+            driver_total_laps: int = session_total_laps
+            is_driver_classified_finisher: bool = False
+
+            is_dnf = False
+            if drv_official:
+                is_dnf = (drv_official.status == "DNF" or "DNF" in (drv_official.time_or_gap or ""))
+            elif is_race_finish_session and all_drv_laps is not None and not all_drv_laps.empty:
+                max_drv_lap = int(all_drv_laps["LapNumber"].dropna().max()) if not all_drv_laps.empty else 0
+                if max_drv_lap < session_total_laps * 0.75:
+                    is_dnf = True
+
+            if is_dnf:
+                is_driver_classified_finisher = False
+                if all_drv_laps is not None and not all_drv_laps.empty:
+                    last_drv_lap = all_drv_laps.iloc[-1]
+                    retirement_time = get_lap_end_time(last_drv_lap)
+                if retirement_time is None and len(tel_times) > 0:
+                    retirement_time = float(tel_times[-1])
+            elif is_race_finish_session and all_drv_laps is not None and not all_drv_laps.empty:
+                valid_laps = all_drv_laps[all_drv_laps["Time"].notna()]
+                last_lap_row = valid_laps.iloc[-1] if not valid_laps.empty else all_drv_laps.iloc[-1]
+                drv_laps_count = int(last_lap_row.get("LapNumber", session_total_laps))
+                finish_time = get_lap_end_time(last_lap_row)
+                driver_total_laps = drv_laps_count
+                is_driver_classified_finisher = True
 
             # Continuous channels
             x_raw = (drv_telemetry["X"].to_numpy() * scale) if "X" in drv_telemetry else np.zeros_like(tel_times)
@@ -539,11 +639,19 @@ def build_replay_payload_from_session(
                 for f in range(1, num_frames):
                     t_frame = uniform_grid[f]
 
-                    # 1. Race finish check by official timestamp: freeze distance at finish line
-                    if is_driver_classified_finisher and finish_time is not None and t_frame >= finish_time:
-                        has_finished_arr[f] = True
-                        unwrapped_dist[f] = d_finish
-                        computed_laps[f] = driver_total_laps
+                    # 1. Race finish check: if already finished, or reached finish timestamp, or final frame
+                    if is_driver_classified_finisher:
+                        if has_finished_arr[f - 1] or (finish_time is not None and t_frame >= finish_time) or (f == num_frames - 1):
+                            has_finished_arr[f] = True
+                            unwrapped_dist[f] = d_finish
+                            computed_laps[f] = driver_total_laps
+                            continue
+
+                    # 2. Retirement / DNF freeze: once retired, freeze distance, lap, and speed
+                    if is_dnf and retirement_time is not None and t_frame >= retirement_time:
+                        unwrapped_dist[f] = unwrapped_dist[f - 1]
+                        computed_laps[f] = computed_laps[f - 1]
+                        spd_interp[f] = 0.0
                         continue
 
                     raw_ds = raw_s[f] - raw_s[f - 1]
@@ -568,7 +676,7 @@ def build_replay_payload_from_session(
 
                     cur_dist = unwrapped_dist[f - 1] + ds
 
-                    # 2. Race finish check by completed distance
+                    # 3. Race finish check by completed distance
                     if is_driver_classified_finisher and cur_dist >= d_finish:
                         cur_dist = d_finish
                         has_finished_arr[f] = True
@@ -634,6 +742,13 @@ def build_replay_payload_from_session(
             pit_duration_arr: List[Optional[float]] = []
 
             for f_idx, t in enumerate(uniform_grid):
+                # If driver is DNF and retired by this frame, they are NOT in a live pit stop
+                if is_dnf and retirement_time is not None and t >= retirement_time:
+                    is_pitting_arr.append(False)
+                    pit_status_arr.append("DNF")
+                    pit_duration_arr.append(None)
+                    continue
+
                 is_pitting = False
                 cur_dur: Optional[float] = None
 
@@ -712,6 +827,7 @@ def build_replay_payload_from_session(
                 is_pitting=is_pitting_arr,
                 pit_duration=pit_duration_arr,
                 has_finished=has_finished_arr,
+                is_dnf=is_dnf,
             )
         except Exception as e:
             logger.warning(f"Error processing driver {drv_id}: {e}")

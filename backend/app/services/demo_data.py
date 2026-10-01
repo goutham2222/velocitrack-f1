@@ -188,7 +188,7 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
     # Lap time ~74 seconds (1:14.000 for leader)
     base_lap_time = 74.0
     dt = 1.0 / sampling_rate
-    total_time = laps * base_lap_time
+    total_time = laps * (base_lap_time + 0.5) + 25.0
     total_frames = int(total_time * sampling_rate)
     timestamps = [round(i * dt, 2) for i in range(total_frames)]
 
@@ -302,7 +302,7 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
                 spd = max(55.0, min(295.0, raw_spd))
 
             # Move distance forward for next frame with race finish clamping
-            d_finish = laps * track_length
+            d_finish = laps * track_length - (rank * 2.0)
             is_finished = curr_dist >= d_finish
             has_finished_arr.append(is_finished)
 
@@ -401,6 +401,7 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
             is_pitting=is_pitting_arr,
             pit_duration=pit_duration_arr,
             has_finished=has_finished_arr,
+            is_dnf=False,
         )
 
     # Weather & Race Control simulation

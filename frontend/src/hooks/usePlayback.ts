@@ -193,6 +193,17 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       distance: number;
     }[] = [];
 
+    // Build lookup map for official session results
+    const officialResultsMap = new Map<string, OfficialResult>();
+    const officialList = (payload?.metadata as any)?.official_results;
+    if (Array.isArray(officialList)) {
+      for (const res of officialList as OfficialResult[]) {
+        if (res && res.driver_code) {
+          officialResultsMap.set(res.driver_code.toUpperCase(), res);
+        }
+      }
+    }
+
     for (const [code, stream] of Object.entries(payload.drivers)) {
       if (!stream.x || stream.x.length === 0) continue;
 
@@ -232,15 +243,25 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       const lap = stream.lap[k] || 1;
       const compound = stream.compound[k] || "MEDIUM";
       const tyreLife = stream.tyre_life[k] || 10;
-      const pitStatus = stream.pit_status?.[k] || "TRACK";
-      const is_pitting = Boolean(
+
+      const streamRecord = stream as Record<string, any>;
+      const officialRes = officialResultsMap.get(code.toUpperCase());
+
+      // DNF / Retired state identification
+      const is_dnf = Boolean(
+        streamRecord.is_dnf ||
+        streamRecord.pit_status?.[k] === "DNF" ||
+        officialRes?.status === "DNF" ||
+        officialRes?.time_or_gap === "DNF"
+      );
+
+      const pitStatus = is_dnf ? "DNF" : (stream.pit_status?.[k] || "TRACK");
+      const is_pitting = is_dnf ? false : Boolean(
         stream.is_pitting?.[k] ??
         pitStatus.includes("PIT")
       );
-      const pit_duration = stream.pit_duration?.[k] ?? null;
-
-      const streamRecord = stream as Record<string, any>;
-      const has_finished = Boolean(
+      const pit_duration = is_dnf ? null : (stream.pit_duration?.[k] ?? null);
+      const has_finished = is_dnf ? false : Boolean(
         Array.isArray(streamRecord.has_finished) ? streamRecord.has_finished[k] : false
       );
 
@@ -253,12 +274,12 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         x,
         y,
         z,
-        speed: Math.round(speed * 10) / 10,
-        rpm,
-        gear,
-        throttle: Math.round(throttle * 10) / 10,
-        brake: Math.round(brake * 10) / 10,
-        drs,
+        speed: is_dnf ? 0 : Math.round(speed * 10) / 10,
+        rpm: is_dnf ? 0 : rpm,
+        gear: is_dnf ? 0 : gear,
+        throttle: is_dnf ? 0 : Math.round(throttle * 10) / 10,
+        brake: is_dnf ? 0 : Math.round(brake * 10) / 10,
+        drs: is_dnf ? 0 : drs,
         distance,
         lap,
         compound,
@@ -267,31 +288,36 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         is_pitting,
         pit_duration,
         has_finished,
+        is_dnf,
       };
 
       driversMap[code] = driverObj;
       leaderboardRaw.push({ driver: driverObj, distance });
     }
 
-    // Build lookup map for official session results
-    const officialResultsMap = new Map<string, OfficialResult>();
-    const officialList = (payload?.metadata as any)?.official_results;
-    if (Array.isArray(officialList)) {
-      for (const res of officialList as OfficialResult[]) {
-        if (res && res.driver_code) {
-          officialResultsMap.set(res.driver_code.toUpperCase(), res);
-        }
-      }
-    }
-
     // Sort running order:
-    // 1. When both drivers have completed the race (has_finished), break ties using official classification
-    // 2. A driver who has completed the race is ahead of any actively racing driver provided they completed race distance
+    // 1. DNF drivers are strictly anchored to the bottom of the field behind all running and finished cars
+    // 2. When both drivers have completed the race (has_finished), break ties using official classification
     // 3. While actively racing, sort strictly by cumulative track distance completed
     leaderboardRaw.sort((a, b) => {
+      const aDnf = a.driver.is_dnf;
+      const bDnf = b.driver.is_dnf;
+
+      if (aDnf && !bDnf) return 1;
+      if (!aDnf && bDnf) return -1;
+      if (aDnf && bDnf) {
+        const aOfficial = officialResultsMap.get(a.driver.code.toUpperCase());
+        const bOfficial = officialResultsMap.get(b.driver.code.toUpperCase());
+        if (aOfficial?.position !== undefined && bOfficial?.position !== undefined) {
+          return aOfficial.position - bOfficial.position;
+        }
+        return b.distance - a.distance;
+      }
+
       const aFinished = a.driver.has_finished;
       const bFinished = b.driver.has_finished;
 
+      // When both drivers have completed the race, official classification is authoritative
       if (aFinished && bFinished) {
         const aOfficial = officialResultsMap.get(a.driver.code.toUpperCase());
         const bOfficial = officialResultsMap.get(b.driver.code.toUpperCase());
@@ -300,11 +326,9 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         }
       }
 
-      if (aFinished && !bFinished && a.distance >= b.distance - 100) {
-        return -1;
-      }
-      if (!aFinished && bFinished && b.distance >= a.distance - 100) {
-        return 1;
+      // If one driver is on a higher lap, they are strictly ahead of a driver on a lower lap
+      if (a.driver.lap !== b.driver.lap) {
+        return b.driver.lap - a.driver.lap;
       }
 
       return b.distance - a.distance;
@@ -313,6 +337,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     // Build real-time Leaderboard with accurate intervals
     const leaderboard: LeaderboardEntry[] = [];
     const leaderDist = leaderboardRaw.length > 0 ? leaderboardRaw[0].distance : 0;
+    const leaderLap = leaderboardRaw.length > 0 ? leaderboardRaw[0].driver.lap : 1;
     const circuitLength =
       payload?.circuit?.track_length_m && payload.circuit.track_length_m > 500
         ? payload.circuit.track_length_m
@@ -332,10 +357,15 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       let drsThreat = false;
 
       const officialRes = officialResultsMap.get(drv.code.toUpperCase());
+      const isDnf = Boolean(drv.is_dnf);
       const isFinished = Boolean(drv.has_finished);
       const leaderFinished = Boolean(leaderboardRaw[0]?.driver.has_finished);
 
-      if (i === 0) {
+      if (isDnf) {
+        gapToLeader = "DNF";
+        intervalToAhead = "DNF";
+        drsThreat = false;
+      } else if (i === 0) {
         gapToLeader = isFinished ? "WINNER" : "LEADER";
         intervalToAhead = isFinished ? "WINNER" : "LEADER";
       } else {
@@ -352,22 +382,41 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
 
         cumulativeGapSec += intervalSec;
 
-        // Is this car lapped (physically trailing by >= 75% of a full lap)?
-        const isLapped = distToLeader >= circuitLength * 0.75;
+        // Is this car lapped (physically trailing by >= 1 lap or officially classified as lapped)?
+        const lapsBehind = Math.max(0, leaderLap - drv.lap);
+        const isOfficialLapped = Boolean(
+          officialRes?.time_or_gap &&
+            (officialRes.time_or_gap.includes("LAP") ||
+              officialRes.status.includes("Lap") ||
+              /^\+\d+$/.test(officialRes.time_or_gap.trim()))
+        );
+        const isLapped = isOfficialLapped || lapsBehind >= 1;
+
+        // Determine exact numeric lap delta (e.g. 1, 2)
+        let lapDelta = lapsBehind >= 1 ? lapsBehind : 1;
+        if (officialRes?.time_or_gap) {
+          const match = officialRes.time_or_gap.match(/\d+/);
+          if (match) lapDelta = parseInt(match[0], 10);
+        }
 
         // If both this driver and the race leader have crossed the finish line,
-        // display the authoritative official race gap (e.g. "+8.562s" or "+1 LAP")
+        // display the authoritative official race gap (e.g. "+90.558s" or "+1 Lap")
         if (isFinished && leaderFinished && officialRes?.time_or_gap) {
-          gapToLeader = officialRes.time_or_gap;
+          if (isLapped) {
+            gapToLeader = `+${lapDelta} Lap`;
+          } else {
+            gapToLeader = officialRes.time_or_gap;
+          }
         } else if (isLapped) {
-          const lapsBehind = Math.max(1, Math.round(distToLeader / circuitLength));
-          gapToLeader = `+${lapsBehind} ${lapsBehind === 1 ? "LAP" : "LAPS"}`;
+          gapToLeader = `+${lapDelta} Lap`;
         } else {
           gapToLeader = `+${cumulativeGapSec.toFixed(3)}s`;
         }
 
-        intervalToAhead = `+${intervalSec.toFixed(3)}s`;
-        drsThreat = !isLapped && !isFinished && intervalSec <= 1.0;
+        intervalToAhead = isLapped
+          ? (prevItem.driver.lap > drv.lap ? `+${prevItem.driver.lap - drv.lap} Lap` : `+${intervalSec.toFixed(3)}s`)
+          : `+${intervalSec.toFixed(3)}s`;
+        drsThreat = !isLapped && !isFinished && !isDnf && intervalSec <= 1.0;
       }
 
       leaderboard.push({
@@ -384,10 +433,11 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         compound: drv.compound,
         tyreLife: drv.tyreLife,
         drsThreat,
-        inPit: drv.is_pitting || drv.pitStatus.includes("PIT"),
-        pitDuration: drv.pit_duration,
+        inPit: !isDnf && (drv.is_pitting || drv.pitStatus.includes("PIT")),
+        pitDuration: isDnf ? null : drv.pit_duration,
         hasFinished: isFinished,
-        officialStatus: officialRes?.status,
+        isDnf: isDnf,
+        officialStatus: isDnf ? "DNF" : officialRes?.status,
       });
     }
 
