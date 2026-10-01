@@ -8,6 +8,7 @@ import {
   OfficialResult,
   PlaybackSpeed,
   WeatherSample,
+  TrackStatusInfo,
 } from "@/types/telemetry";
 
 interface UsePlaybackOptions {
@@ -486,6 +487,35 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     return matched;
   }, [payload, currentTime]);
 
+  // Dynamic FIA track status for current frame
+  const currentTrackStatus: TrackStatusInfo = useMemo(() => {
+    if (!payload) {
+      return { code: 1, label: "GREEN FLAG", color: "#10B981" };
+    }
+    const u = currentTime / timeStep;
+    const k = Math.min(Math.max(0, Math.floor(u)), totalFrames - 1);
+    const statusCode =
+      payload.track_status && payload.track_status.length > 0
+        ? (payload.track_status[k] ?? 1)
+        : (currentWeather?.track_status ? parseInt(currentWeather.track_status, 10) : 1);
+
+    switch (statusCode) {
+      case 2:
+        return { code: 2, label: "YELLOW FLAG", color: "#EAB308" };
+      case 4:
+        return { code: 4, label: "SAFETY CAR", color: "#F59E0B" };
+      case 5:
+        return { code: 5, label: "RED FLAG", color: "#EF4444" };
+      case 6:
+        return { code: 6, label: "VSC DEPLOYED", color: "#F59E0B" };
+      case 7:
+        return { code: 7, label: "VSC ENDING", color: "#F59E0B" };
+      case 1:
+      default:
+        return { code: 1, label: "GREEN FLAG", color: "#10B981" };
+    }
+  }, [payload, currentTime, timeStep, totalFrames, currentWeather?.track_status]);
+
   const focusedDriver =
     selectedDriverCode && interpolatedState?.drivers[selectedDriverCode]
       ? interpolatedState.drivers[selectedDriverCode]
@@ -510,6 +540,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     leaderboard: interpolatedState?.leaderboard || [],
     focusedDriver,
     currentWeather,
+    currentTrackStatus,
   };
 }
 

@@ -133,6 +133,36 @@ def generate_pit_lane(
     return pit_points
 
 
+def parse_track_status_code(val) -> int:
+    """
+    Parses FastF1 track status values into standard FIA single-digit integer codes:
+    1: Track Clear (Green Flag)
+    2: Yellow Flag
+    4: Safety Car (SC)
+    5: Red Flag
+    6: Virtual Safety Car (VSC) Deployed
+    7: Virtual Safety Car (VSC) Ending
+    """
+    try:
+        s = str(val).strip()
+        if not s:
+            return 1
+        if "5" in s:
+            return 5
+        if "4" in s:
+            return 4
+        if "6" in s:
+            return 6
+        if "7" in s:
+            return 7
+        if "2" in s:
+            return 2
+        code = int(s[0])
+        return code if code in (1, 2, 4, 5, 6, 7) else 1
+    except Exception:
+        return 1
+
+
 def get_lap_end_time(row) -> Optional[float]:
     """
     Safely retrieves or calculates the lap finish timestamp (in session seconds).
@@ -891,6 +921,30 @@ def build_replay_payload_from_session(
         except Exception as e:
             logger.debug(f"Failed to parse weather: {e}")
 
+    # 5. Extract FIA Track Status
+    track_status_arr: List[int] = [1] * num_frames
+    try:
+        if (
+            hasattr(session, "track_status")
+            and session.track_status is not None
+            and not session.track_status.empty
+        ):
+            ts_df = session.track_status
+            if "Time" in ts_df.columns and "Status" in ts_df.columns:
+                valid_ts = ts_df.dropna(subset=["Time", "Status"])
+                if not valid_ts.empty:
+                    ts_times = valid_ts["Time"].dt.total_seconds().to_numpy()
+                    ts_codes = np.array([parse_track_status_code(s) for s in valid_ts["Status"]])
+                    if len(ts_times) > 0 and len(ts_codes) > 0:
+                        indices = np.searchsorted(ts_times, uniform_grid, side="right") - 1
+                        valid_mask = uniform_grid >= ts_times[0]
+                        clipped_indices = np.clip(indices, 0, len(ts_codes) - 1)
+                        status_for_frames = np.where(valid_mask, ts_codes[clipped_indices], 1)
+                        track_status_arr = [int(v) for v in status_for_frames]
+    except Exception as e:
+        logger.warning(f"Failed to extract track_status: {e}")
+        track_status_arr = [1] * num_frames
+
     actual_lap_end = int(target_laps["LapNumber"].dropna().max()) if not target_laps.empty else lap_end
 
     metadata = ReplayMetadata(
@@ -915,5 +969,6 @@ def build_replay_payload_from_session(
         timestamps=timestamps,
         drivers=drivers_dict,
         weather=weather_samples,
+        track_status=track_status_arr,
     )
 

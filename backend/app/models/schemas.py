@@ -180,4 +180,6 @@ class ReplayPayload(BaseModel):
     timestamps: List[float]
     drivers: Dict[str, DriverReplayStream]
     weather: List[WeatherSample]
+    track_status: List[int] = Field(default_factory=list)
+
 

@@ -385,7 +385,10 @@ export default function ReplayDashboard() {
         {/* Bottom-Right Floating Stack: Collapsible Weather Card + Compact Map-Control Pill */}
         {payload && (
           <div className="absolute bottom-5 right-4 z-30 pointer-events-auto hidden sm:flex flex-col gap-2 animate-in fade-in duration-200">
-            <WeatherWidget weather={playback.currentWeather} />
+            <WeatherWidget
+              weather={playback.currentWeather}
+              trackStatus={playback.currentTrackStatus}
+            />
 
             {/* Unified Map-Control Pill: Toggles (Labels, Speed Unit) + 2D Rotate/Compass + Zoom Slider */}
             <div className="w-64 backdrop-blur-md bg-black/60 border border-white/10 rounded-xl p-2.5 shadow-2xl flex flex-col gap-2 select-none font-mono text-xs group">

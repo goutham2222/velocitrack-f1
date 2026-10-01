@@ -145,13 +145,21 @@ export interface ReplayMetadata {
   official_results?: OfficialResult[];
 }
 
+export interface TrackStatusInfo {
+  code: number;
+  label: string;
+  color: string;
+}
+
 export interface ReplayPayload {
   metadata: ReplayMetadata;
   circuit: CircuitGeometry;
   timestamps: number[];
   drivers: Record<string, DriverReplayStream>;
   weather: WeatherSample[];
+  track_status?: number[];
 }
+
 
 // ---------------------------------------------------------------------------
 // Realtime UI Derived State Types

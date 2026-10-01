@@ -469,11 +469,21 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
         official_results=official_results,
     )
 
+    # Dynamic FIA track status array aligned with demo replay events:
+    # 0 to 45%: Green Flag (1)
+    # 45% to 60%: Yellow Flag (2)
+    # 60%+: Green Flag (1)
+    track_status = [
+        2 if (total_time * 0.45 <= t < total_time * 0.60) else 1
+        for t in timestamps
+    ]
+
     return ReplayPayload(
         metadata=metadata,
         circuit=circuit,
         timestamps=timestamps,
         drivers=drivers_data,
         weather=weather_samples,
+        track_status=track_status,
     )
 

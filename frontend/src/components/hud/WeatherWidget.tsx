@@ -1,41 +1,39 @@
 "use client";
 
 import React, { useState } from "react";
-import { WeatherSample } from "@/types/telemetry";
+import { WeatherSample, TrackStatusInfo } from "@/types/telemetry";
 import { CloudRain, Wind, Thermometer, Flag, ChevronDown, ChevronUp } from "lucide-react";
 
 interface WeatherWidgetProps {
   weather: WeatherSample;
+  trackStatus?: TrackStatusInfo;
 }
 
-export function WeatherWidget({ weather }: WeatherWidgetProps) {
+export function WeatherWidget({ weather, trackStatus }: WeatherWidgetProps) {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(true);
 
-  const isYellow = weather.track_status === "2";
-  const isSC = weather.track_status === "4";
-  const isRed = weather.track_status === "5";
-  const isVSC = weather.track_status === "6";
+  const status: TrackStatusInfo = trackStatus ?? {
+    code: parseInt(weather.track_status || "1", 10),
+    label: weather.status_text || "GREEN FLAG",
+    color: "#10B981",
+  };
 
-  let flagBg = "bg-emerald-500/20 text-emerald-400 border-emerald-500/40";
-  let flagText = weather.status_text || "TRACK CLEAR";
-  let flagShortText = "CLEAR";
+  const { code, label, color } = status;
 
-  if (isRed) {
-    flagBg = "bg-red-600/30 text-red-300 border-red-500 animate-pulse";
-    flagText = "RED FLAG";
-    flagShortText = "RED";
-  } else if (isSC) {
-    flagBg = "bg-amber-500/30 text-amber-300 border-amber-500 animate-pulse";
-    flagText = "SAFETY CAR (SC)";
-    flagShortText = "SC";
-  } else if (isVSC) {
-    flagBg = "bg-amber-500/25 text-amber-300 border-amber-500";
-    flagText = "VSC ACTIVE";
-    flagShortText = "VSC";
-  } else if (isYellow) {
-    flagBg = "bg-yellow-500/25 text-yellow-300 border-yellow-500";
-    flagText = "YELLOW FLAG";
-    flagShortText = "YELLOW";
+  let badgeBg = "bg-emerald-500/15 text-emerald-400 border-emerald-500/40";
+  let hazardGlow = "";
+
+  if (code === 5) {
+    badgeBg = "bg-red-600/30 text-red-300 border-red-500";
+    hazardGlow = "shadow-[0_0_14px_rgba(239,68,68,0.55)]";
+  } else if (code === 4) {
+    badgeBg = "bg-amber-500/30 text-amber-300 border-amber-500";
+    hazardGlow = "shadow-[0_0_12px_rgba(245,158,11,0.45)]";
+  } else if (code === 6 || code === 7) {
+    badgeBg = "bg-amber-500/20 text-amber-300 border-amber-500/50";
+    hazardGlow = "shadow-[0_0_8px_rgba(245,158,11,0.3)]";
+  } else if (code === 2) {
+    badgeBg = "bg-yellow-500/20 text-yellow-300 border-yellow-500/50";
   }
 
   return (
@@ -49,10 +47,10 @@ export function WeatherWidget({ weather }: WeatherWidgetProps) {
       >
         <div className="flex items-center gap-1.5 min-w-0">
           <div
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase border transition-all ${flagBg}`}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase border transition-all ${badgeBg} ${hazardGlow}`}
           >
-            <Flag className="w-2.5 h-2.5 flex-shrink-0" />
-            <span className="truncate">{isCollapsed ? flagShortText : flagText}</span>
+            <Flag className="w-2.5 h-2.5 flex-shrink-0" style={{ color }} />
+            <span className="truncate">{label}</span>
           </div>
 
           {/* Quick metric preview when collapsed */}
