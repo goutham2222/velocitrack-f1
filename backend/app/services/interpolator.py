@@ -444,17 +444,24 @@ def build_replay_payload_from_session(
             all_drv_laps = laps_df.pick_driver(drv_id) if (laps_df is not None and not laps_df.empty) else drv_laps
             finish_time: Optional[float] = None
             driver_total_laps: int = session_total_laps
+            is_driver_classified_finisher: bool = False
 
             if is_race_finish_session and all_drv_laps is not None and not all_drv_laps.empty:
                 valid_laps = all_drv_laps[all_drv_laps["Time"].notna()]
                 if not valid_laps.empty:
                     last_lap_row = valid_laps.iloc[-1]
-                    finish_time = get_lap_end_time(last_lap_row)
-                    driver_total_laps = int(last_lap_row.get("LapNumber", session_total_laps))
+                    drv_laps_count = int(last_lap_row.get("LapNumber", session_total_laps))
+                    if drv_laps_count >= session_total_laps - 1:
+                        finish_time = get_lap_end_time(last_lap_row)
+                        driver_total_laps = drv_laps_count
+                        is_driver_classified_finisher = True
                 elif not all_drv_laps.empty:
                     last_lap_row = all_drv_laps.iloc[-1]
-                    finish_time = get_lap_end_time(last_lap_row)
-                    driver_total_laps = int(last_lap_row.get("LapNumber", session_total_laps))
+                    drv_laps_count = int(last_lap_row.get("LapNumber", session_total_laps))
+                    if drv_laps_count >= session_total_laps - 1:
+                        finish_time = get_lap_end_time(last_lap_row)
+                        driver_total_laps = drv_laps_count
+                        is_driver_classified_finisher = True
 
             # Driver metadata
             drv_info = session.get_driver(drv_id)
@@ -523,7 +530,7 @@ def build_replay_payload_from_session(
                     computed_laps[0] = init_lap
 
                 # Check frame 0 finish state
-                if finish_time is not None and uniform_grid[0] >= finish_time:
+                if is_driver_classified_finisher and finish_time is not None and uniform_grid[0] >= finish_time:
                     has_finished_arr[0] = True
                     unwrapped_dist[0] = d_finish
                     computed_laps[0] = driver_total_laps
@@ -533,7 +540,7 @@ def build_replay_payload_from_session(
                     t_frame = uniform_grid[f]
 
                     # 1. Race finish check by official timestamp: freeze distance at finish line
-                    if finish_time is not None and t_frame >= finish_time:
+                    if is_driver_classified_finisher and finish_time is not None and t_frame >= finish_time:
                         has_finished_arr[f] = True
                         unwrapped_dist[f] = d_finish
                         computed_laps[f] = driver_total_laps
@@ -562,7 +569,7 @@ def build_replay_payload_from_session(
                     cur_dist = unwrapped_dist[f - 1] + ds
 
                     # 2. Race finish check by completed distance
-                    if is_race_finish_session and cur_dist >= d_finish:
+                    if is_driver_classified_finisher and cur_dist >= d_finish:
                         cur_dist = d_finish
                         has_finished_arr[f] = True
 

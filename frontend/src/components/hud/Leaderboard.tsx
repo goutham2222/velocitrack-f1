@@ -112,7 +112,7 @@ export function Leaderboard({
                     )}
                   </div>
 
-                  {/* Right: Gap & Compound */}
+                  {/* Right: Gap, Compound & Race Lap */}
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span
                       className={`font-mono text-[11px] w-16 text-right ${

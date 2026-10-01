@@ -238,6 +238,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         pitStatus.includes("PIT")
       );
       const pit_duration = stream.pit_duration?.[k] ?? null;
+
       const streamRecord = stream as Record<string, any>;
       const has_finished = Boolean(
         Array.isArray(streamRecord.has_finished) ? streamRecord.has_finished[k] : false
@@ -284,9 +285,9 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     }
 
     // Sort running order:
-    // 1. If both drivers have completed the race (has_finished), anchor their order strictly to official FIA results
-    // 2. A driver who has completed the race distance is always ahead of any driver still racing on earlier laps
-    // 3. While actively racing, sort by live cumulative track distance completed
+    // 1. When both drivers have completed the race (has_finished), break ties using official classification
+    // 2. A driver who has completed the race is ahead of any actively racing driver provided they completed race distance
+    // 3. While actively racing, sort strictly by cumulative track distance completed
     leaderboardRaw.sort((a, b) => {
       const aFinished = a.driver.has_finished;
       const bFinished = b.driver.has_finished;
@@ -297,13 +298,12 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         if (aOfficial?.position !== undefined && bOfficial?.position !== undefined) {
           return aOfficial.position - bOfficial.position;
         }
-        return b.distance - a.distance;
       }
 
-      if (aFinished && !bFinished) {
+      if (aFinished && !bFinished && a.distance >= b.distance - 100) {
         return -1;
       }
-      if (!aFinished && bFinished) {
+      if (!aFinished && bFinished && b.distance >= a.distance - 100) {
         return 1;
       }
 
@@ -313,13 +313,16 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     // Build real-time Leaderboard with accurate intervals
     const leaderboard: LeaderboardEntry[] = [];
     const leaderDist = leaderboardRaw.length > 0 ? leaderboardRaw[0].distance : 0;
-    const leaderLap = leaderboardRaw.length > 0 ? leaderboardRaw[0].driver.lap : 1;
     const circuitLength =
       payload?.circuit?.track_length_m && payload.circuit.track_length_m > 500
         ? payload.circuit.track_length_m
-        : 5000;
+        : 5500;
 
-    let prevLeaderSec = 0;
+    // Uniform reference race pace (m/s) across the circuit (~200-220 km/h)
+    // Converts spatial distance deltas smoothly to time gaps without instantaneous speed noise
+    const racePaceMs = Math.max(45, circuitLength / 95);
+
+    let cumulativeGapSec = 0;
 
     for (let i = 0; i < leaderboardRaw.length; i++) {
       const item = leaderboardRaw[i];
@@ -329,8 +332,8 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       let drsThreat = false;
 
       const officialRes = officialResultsMap.get(drv.code.toUpperCase());
-      const isFinished = drv.has_finished;
-      const leaderFinished = leaderboardRaw[0]?.driver.has_finished;
+      const isFinished = Boolean(drv.has_finished);
+      const leaderFinished = Boolean(leaderboardRaw[0]?.driver.has_finished);
 
       if (i === 0) {
         gapToLeader = isFinished ? "WINNER" : "LEADER";
@@ -340,35 +343,27 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         const distToPrev = Math.max(0, prevItem.distance - item.distance);
         const distToLeader = Math.max(0, leaderDist - item.distance);
 
-        // Uniform reference race pace for the entire pack:
-        // Converts spatial meters smoothly and reliably to timing gaps
-        const racePaceMs = Math.max(45, circuitLength / 95);
-        let leaderSec = distToLeader / racePaceMs;
+        // When cars are close (< 250m, ~4s), blend their local speed to capture realistic wheel-to-wheel battles.
+        // When cars are further apart, reference circuit race pace prevents corner-vs-straight speed anomalies.
+        const localSpeedMs = Math.max(25, (drv.speed + prevItem.driver.speed) / 2 / 3.6);
+        const blendWeight = Math.min(1, distToPrev / 250);
+        const intervalSpeed = (1 - blendWeight) * localSpeedMs + blendWeight * racePaceMs;
+        const intervalSec = distToPrev / intervalSpeed;
 
-        // Enforce strictly monotonic non-decreasing gaps down the timing tower
-        // Eliminates out-of-order gap anomalies
-        if (leaderSec <= prevLeaderSec) {
-          leaderSec = prevLeaderSec + 0.01;
-        }
-        prevLeaderSec = leaderSec;
+        cumulativeGapSec += intervalSec;
 
-        const intervalSec = distToPrev / racePaceMs;
-
-        // Issue 1: A driver is only genuinely a lap down if physically separated
-        // by at least 75% of a full circuit lap (or >= 60 seconds).
-        // Crossing the start/finish line seam a few seconds after the leader
-        // MUST keep showing their live second delta, NOT "+1 LAP".
+        // Is this car lapped (physically trailing by >= 75% of a full lap)?
         const isLapped = distToLeader >= circuitLength * 0.75;
 
         // If both this driver and the race leader have crossed the finish line,
-        // anchor gap to authoritative official race result
+        // display the authoritative official race gap (e.g. "+8.562s" or "+1 LAP")
         if (isFinished && leaderFinished && officialRes?.time_or_gap) {
           gapToLeader = officialRes.time_or_gap;
         } else if (isLapped) {
           const lapsBehind = Math.max(1, Math.round(distToLeader / circuitLength));
           gapToLeader = `+${lapsBehind} ${lapsBehind === 1 ? "LAP" : "LAPS"}`;
         } else {
-          gapToLeader = `+${leaderSec.toFixed(3)}s`;
+          gapToLeader = `+${cumulativeGapSec.toFixed(3)}s`;
         }
 
         intervalToAhead = `+${intervalSec.toFixed(3)}s`;
