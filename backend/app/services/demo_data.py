@@ -1,4 +1,5 @@
 import math
+from datetime import datetime, timezone
 import numpy as np
 from typing import Dict, List, Tuple
 from app.models.schemas import (
@@ -456,13 +457,14 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
     ]
 
     metadata = ReplayMetadata(
-        year=2024,
+        year=datetime.now(timezone.utc).year,
         event_name="Monaco Grand Prix",
         session_name="Race",
         circuit_name="Circuit de Monaco",
         total_frames=total_frames,
         time_step=dt,
         duration_seconds=round(total_time, 2),
+        total_duration=round(total_time, 2),
         start_session_time=0.0,
         end_session_time=round(total_time, 2),
         lap_start=1,

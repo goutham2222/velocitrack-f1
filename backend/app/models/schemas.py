@@ -168,6 +168,7 @@ class ReplayMetadata(BaseModel):
     total_frames: int
     time_step: float
     duration_seconds: float
+    total_duration: Optional[float] = None
     start_session_time: float
     end_session_time: float
     lap_start: int

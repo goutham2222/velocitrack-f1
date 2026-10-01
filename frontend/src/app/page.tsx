@@ -93,7 +93,7 @@ export default function ReplayDashboard() {
   // Derived active session metadata for controlled session selector persistence
   const currentSession = useMemo<ActiveSessionContext | null>(() => {
     const currentYear = new Date().getFullYear();
-    if (!payload?.metadata || !hasCustomSession) {
+    if (!payload?.metadata) {
       return {
         year: currentYear,
         eventName: "Monaco Grand Prix",
@@ -104,14 +104,14 @@ export default function ReplayDashboard() {
       };
     }
     return {
-      year: payload.metadata.year,
+      year: payload.metadata.year || currentYear,
       eventName: payload.metadata.event_name,
       sessionCode: payload.metadata.session_name === "Race" ? "R" : (payload.metadata.session_name || "R"),
       lapStart: payload.metadata.lap_start || 1,
       lapEnd: payload.metadata.lap_end || 3,
-      totalLaps: payload.metadata.total_laps || 57,
+      totalLaps: payload.metadata.total_laps || 78,
     };
-  }, [payload?.metadata, hasCustomSession]);
+  }, [payload?.metadata]);
 
   // Load demo on initial mount for instant zero-wait startup
   useEffect(() => {

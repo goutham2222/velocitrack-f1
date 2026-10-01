@@ -425,17 +425,40 @@ def build_replay_payload_from_session(
     if target_laps.empty:
         target_laps = laps_df[laps_df["LapNumber"] <= 2]
 
-    # Time boundaries in seconds (SessionTime timedelta -> seconds)
-    t_start_delta = target_laps["LapStartTime"].dropna().min()
-    t_end_delta = target_laps["Time"].dropna().max()
+    session_total_laps = int(laps_df["LapNumber"].dropna().max()) if not laps_df.empty else lap_end
 
-    t_start = t_start_delta.total_seconds() if hasattr(t_start_delta, "total_seconds") else 0.0
-    t_end = t_end_delta.total_seconds() if hasattr(t_end_delta, "total_seconds") else (t_start + 180.0)
+    # Rigidly anchor t_start to official start of Lap 1 (lights-out)
+    if lap_start <= 1:
+        lap1_laps = laps_df[laps_df["LapNumber"] == 1]
+        if not lap1_laps.empty and lap1_laps["LapStartTime"].notna().any():
+            t_start_delta = lap1_laps["LapStartTime"].dropna().min()
+        else:
+            t_start_delta = laps_df["LapStartTime"].dropna().min()
+    else:
+        t_start_delta = target_laps["LapStartTime"].dropna().min()
+        if pd.isna(t_start_delta):
+            t_start_delta = laps_df["LapStartTime"].dropna().min()
 
-    raw_duration = max(10.0, t_end - t_start)
-    # Cap replay duration to 3 hours (10,800s) to cover any full race session including red flags
-    MAX_REPLAY_DURATION = 10800.0
-    duration = min(raw_duration, MAX_REPLAY_DURATION)
+    # Rigidly anchor t_end to final chequered flag timestamp across classified drivers
+    if lap_end >= session_total_laps:
+        t_end_delta = laps_df["Time"].dropna().max()
+    else:
+        t_end_delta = target_laps["Time"].dropna().max()
+        if pd.isna(t_end_delta):
+            t_end_delta = laps_df["Time"].dropna().max()
+
+    t_start = (
+        float(t_start_delta.total_seconds())
+        if hasattr(t_start_delta, "total_seconds") and not pd.isna(t_start_delta)
+        else float(laps_df["LapStartTime"].dropna().min().total_seconds())
+    )
+    t_end = (
+        float(t_end_delta.total_seconds())
+        if hasattr(t_end_delta, "total_seconds") and not pd.isna(t_end_delta)
+        else float(laps_df["Time"].dropna().max().total_seconds())
+    )
+
+    duration = max(10.0, t_end - t_start)
     t_end = t_start + duration
 
     # Adaptive sampling frequency: for short replays use requested sampling_rate (up to 10 Hz).
@@ -1026,6 +1049,7 @@ def build_replay_payload_from_session(
         total_frames=num_frames,
         time_step=dt,
         duration_seconds=round(duration, 2),
+        total_duration=round(duration, 2),
         start_session_time=round(t_start, 2),
         end_session_time=round(t_end, 2),
         lap_start=lap_start,

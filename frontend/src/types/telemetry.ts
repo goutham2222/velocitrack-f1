@@ -138,6 +138,7 @@ export interface ReplayMetadata {
   total_frames: number;
   time_step: number;
   duration_seconds: number;
+  total_duration?: number;
   start_session_time: number;
   end_session_time: number;
   lap_start: number;

@@ -31,7 +31,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [selectedDriverCode, setSelectedDriverCode] = useState<string | null>(initialDriver ?? null);
 
-  const duration = payload?.metadata.duration_seconds || 100;
+  const duration = payload?.metadata.total_duration ?? payload?.metadata.duration_seconds ?? 100;
   const timeStep = payload?.metadata.time_step || 0.1;
   const totalFrames = payload?.metadata.total_frames || 1000;
 

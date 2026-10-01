@@ -8,8 +8,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export async function fetchAvailableYears(): Promise<number[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/sessions/years`);
-    if (!res.ok) throw new Error("Failed to fetch years");
+    const res = await fetch(`${API_BASE}/api/seasons`);
+    if (!res.ok) {
+      // Fallback to sessions/years alias if needed
+      const altRes = await fetch(`${API_BASE}/api/sessions/years`);
+      if (!altRes.ok) throw new Error("Failed to fetch seasons");
+      return await altRes.json();
+    }
     return await res.json();
   } catch (err) {
     console.warn("Using fallback seasons:", err);
