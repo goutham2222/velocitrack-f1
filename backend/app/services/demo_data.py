@@ -402,6 +402,7 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
             pit_duration=pit_duration_arr,
             has_finished=has_finished_arr,
             is_dnf=False,
+            is_active=[True] * total_frames,
         )
 
     # Weather & Race Control simulation

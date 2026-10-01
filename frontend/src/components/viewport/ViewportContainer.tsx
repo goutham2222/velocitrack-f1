@@ -160,17 +160,19 @@ export function ViewportContainer({
         {/* 3D Track & Environment */}
         <Track3D circuit={circuit} />
 
-        {/* Dynamic Drivers */}
-        {driverList.map((drv) => (
-          <DriverMarker3D
-            key={drv.code}
-            driver={drv}
-            isFocused={focusedDriver?.code === drv.code}
-            onSelect={onSelectDriver}
-            showLabels={showDriverLabels}
-            cameraMode={cameraMode}
-          />
-        ))}
+        {/* Dynamic Drivers (retired DNF cars are completely unmounted) */}
+        {driverList
+          .filter((drv) => !drv.is_dnf && drv.is_active !== false)
+          .map((drv) => (
+            <DriverMarker3D
+              key={drv.code}
+              driver={drv}
+              isFocused={focusedDriver?.code === drv.code}
+              onSelect={onSelectDriver}
+              showLabels={showDriverLabels}
+              cameraMode={cameraMode}
+            />
+          ))}
 
         {/* Camera Control Rig with Smooth Dynamic Lerp Overview Transition */}
         <CameraRig

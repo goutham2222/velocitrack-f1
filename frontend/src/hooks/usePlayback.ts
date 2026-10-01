@@ -45,9 +45,18 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
   const playbackSpeedRef = useRef<PlaybackSpeed>(playbackSpeed);
   playbackSpeedRef.current = playbackSpeed;
 
-  // Sync selected driver if selected code not in payload
+  const lastSessionKeyRef = useRef<string>("");
+
+  // Reset selected driver on session load or if code not in payload
   useEffect(() => {
-    if (payload && payload.drivers && selectedDriverCode) {
+    if (!payload) return;
+    const sessionKey = `${payload.metadata.year}-${payload.metadata.event_name}-${payload.metadata.session_name}`;
+    if (lastSessionKeyRef.current && lastSessionKeyRef.current !== sessionKey) {
+      setSelectedDriverCode(null);
+    }
+    lastSessionKeyRef.current = sessionKey;
+
+    if (payload.drivers && selectedDriverCode) {
       const codes = Object.keys(payload.drivers);
       if (codes.length > 0 && !codes.includes(selectedDriverCode)) {
         setSelectedDriverCode(null);
@@ -247,13 +256,12 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       const streamRecord = stream as Record<string, any>;
       const officialRes = officialResultsMap.get(code.toUpperCase());
 
-      // DNF / Retired state identification
-      const is_dnf = Boolean(
-        streamRecord.is_dnf ||
-        streamRecord.pit_status?.[k] === "DNF" ||
-        officialRes?.status === "DNF" ||
-        officialRes?.time_or_gap === "DNF"
-      );
+      // DNF / Active state identification per frame
+      const is_active = Array.isArray(streamRecord.is_active)
+        ? Boolean(streamRecord.is_active[k])
+        : (streamRecord.pit_status?.[k] !== "DNF");
+
+      const is_dnf = !is_active || streamRecord.pit_status?.[k] === "DNF";
 
       const pitStatus = is_dnf ? "DNF" : (stream.pit_status?.[k] || "TRACK");
       const is_pitting = is_dnf ? false : Boolean(
@@ -289,6 +297,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         pit_duration,
         has_finished,
         is_dnf,
+        is_active,
       };
 
       driversMap[code] = driverObj;
@@ -433,10 +442,13 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         compound: drv.compound,
         tyreLife: drv.tyreLife,
         drsThreat,
+        drs: drv.drs,
+        isDrsOpen: drv.drs >= 10,
         inPit: !isDnf && (drv.is_pitting || drv.pitStatus.includes("PIT")),
         pitDuration: isDnf ? null : drv.pit_duration,
         hasFinished: isFinished,
         isDnf: isDnf,
+        is_active: drv.is_active,
         officialStatus: isDnf ? "DNF" : officialRes?.status,
       });
     }

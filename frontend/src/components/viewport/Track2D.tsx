@@ -251,6 +251,7 @@ export function Track2D({
       let clickedDriverCode: string | null = null;
       const driverList = Object.values(drivers);
       for (const drv of driverList) {
+        if (drv.is_dnf || drv.is_active === false) continue;
         const dist = Math.hypot(worldX - drv.x, worldY - drv.y) * fitScale;
         if (dist < 22) {
           clickedDriverCode = drv.code;
@@ -444,9 +445,10 @@ export function Track2D({
         ctx.restore();
       }
 
-      // Draw Drivers (Halo, Inner Dot, and Upright Tags)
+      // Draw Drivers (Halo, Inner Dot, and Upright Tags; DNF ghost cars omitted)
       const driverList = Object.values(drivers);
       for (const drv of driverList) {
+        if (drv.is_dnf || drv.is_active === false) continue;
         const isFocused = focusedDriver?.code === drv.code;
         const isPitting = Boolean(drv.is_pitting || drv.pitStatus?.includes("PIT"));
         const markerColor = isPitting ? "#F59E0B" : drv.teamColor;

@@ -573,6 +573,14 @@ def build_replay_payload_from_session(
                 driver_total_laps = drv_laps_count
                 is_driver_classified_finisher = True
 
+            # If telemetry ended significantly before the session window end, treat as retirement
+            if len(tel_times) > 0:
+                last_tel_time = float(tel_times[-1])
+                if not is_driver_classified_finisher and last_tel_time < t_end_delta.total_seconds() - 15.0:
+                    is_dnf = True
+                    if retirement_time is None or last_tel_time < retirement_time:
+                        retirement_time = last_tel_time
+
             # Continuous channels
             x_raw = (drv_telemetry["X"].to_numpy() * scale) if "X" in drv_telemetry else np.zeros_like(tel_times)
             y_raw = (drv_telemetry["Y"].to_numpy() * scale) if "Y" in drv_telemetry else np.zeros_like(tel_times)
@@ -736,14 +744,18 @@ def build_replay_payload_from_session(
             elif "Status" in drv_telemetry:
                 tel_in_pit_flags = np.array(["pit" in str(s).lower() for s in drv_telemetry["Status"]])
 
-            # Frame-by-frame pit status and duration
+            # Frame-by-frame pit status, active state, and duration
             is_pitting_arr: List[bool] = []
             pit_status_arr: List[str] = []
             pit_duration_arr: List[Optional[float]] = []
+            is_active_arr: List[bool] = []
 
             for f_idx, t in enumerate(uniform_grid):
+                has_retired = bool(is_dnf and retirement_time is not None and t >= retirement_time)
+                is_active_arr.append(not has_retired)
+
                 # If driver is DNF and retired by this frame, they are NOT in a live pit stop
-                if is_dnf and retirement_time is not None and t >= retirement_time:
+                if has_retired:
                     is_pitting_arr.append(False)
                     pit_status_arr.append("DNF")
                     pit_duration_arr.append(None)
@@ -828,6 +840,7 @@ def build_replay_payload_from_session(
                 pit_duration=pit_duration_arr,
                 has_finished=has_finished_arr,
                 is_dnf=is_dnf,
+                is_active=is_active_arr,
             )
         except Exception as e:
             logger.warning(f"Error processing driver {drv_id}: {e}")

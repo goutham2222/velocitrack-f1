@@ -21,6 +21,11 @@ export function DriverMarker3D({
 }: DriverMarker3DProps) {
   const groupRef = useRef<THREE.Group>(null);
 
+  // Unmount completely if driver is retired/DNF on this frame (clears ghost cars from track surface)
+  if (driver.is_dnf || driver.is_active === false) {
+    return null;
+  }
+
   // Determine if driver is currently in pit lane
   const isPitting = Boolean(driver.is_pitting || driver.pitStatus?.includes("PIT"));
   const markerColor = isPitting ? "#F59E0B" : driver.teamColor;

@@ -15,7 +15,7 @@ import { DriverFocusPanel } from "@/components/hud/DriverFocusPanel";
 import { WeatherWidget } from "@/components/hud/WeatherWidget";
 import { PlaybackControls } from "@/components/controls/PlaybackControls";
 import { ViewModeSelector } from "@/components/controls/ViewModeSelector";
-import { SessionPicker } from "@/components/controls/SessionPicker";
+import { SessionPicker, ActiveSessionContext } from "@/components/controls/SessionPicker";
 import {
   SlidersHorizontal,
   X,
@@ -89,6 +89,28 @@ export default function ReplayDashboard() {
     return payload?.metadata.lap_start || 1;
   }, [playback.leaderboard, payload?.metadata.lap_start]);
 
+  // Derived active session metadata for controlled session selector persistence
+  const currentSession = useMemo<ActiveSessionContext | null>(() => {
+    if (!payload?.metadata) {
+      return {
+        year: 2024,
+        eventName: "Monaco Grand Prix",
+        sessionCode: "R",
+        lapStart: 1,
+        lapEnd: 3,
+        totalLaps: 78,
+      };
+    }
+    return {
+      year: payload.metadata.year,
+      eventName: payload.metadata.event_name,
+      sessionCode: payload.metadata.session_name === "Race" ? "R" : (payload.metadata.session_name || "R"),
+      lapStart: payload.metadata.lap_start || 1,
+      lapEnd: payload.metadata.lap_end || 3,
+      totalLaps: payload.metadata.total_laps || 57,
+    };
+  }, [payload?.metadata]);
+
   // Load demo on initial mount for instant zero-wait startup
   useEffect(() => {
     setIsLoading(true);
@@ -110,6 +132,15 @@ export default function ReplayDashboard() {
     setZoomPercent(100);
     setResetRotation2DTrigger((prev) => prev + 1);
   }, [playback]);
+
+  // If the currently followed driver retires/DNFs, exit chase camera back to orbit view
+  useEffect(() => {
+    if (playback.selectedDriverCode && playback.focusedDriver) {
+      if (playback.focusedDriver.is_dnf || playback.focusedDriver.is_active === false) {
+        handleResetCamera();
+      }
+    }
+  }, [playback.selectedDriverCode, playback.focusedDriver, handleResetCamera]);
 
   const handleSelectDriver = useCallback(
     (code: string) => {
@@ -160,11 +191,20 @@ export default function ReplayDashboard() {
   ]);
 
   const handleLoadDemo = useCallback(() => {
+    playback.setSelectedDriverCode(null);
+    setCameraMode("orbit");
+    setResetTrigger((prev) => prev + 1);
+    setZoomPercent(100);
+    setResetRotation2DTrigger((prev) => prev + 1);
+
     setIsLoading(true);
     fetchDemoReplay(10, 2)
       .then((data) => {
         setPayload(data);
         playback.seekTo(0);
+        playback.setSelectedDriverCode(null);
+        setCameraMode("orbit");
+        setResetTrigger((prev) => prev + 1);
         setIsLoading(false);
         handleClosePicker();
       })
@@ -182,11 +222,20 @@ export default function ReplayDashboard() {
       lapStart: number,
       lapEnd: number
     ) => {
+      playback.setSelectedDriverCode(null);
+      setCameraMode("orbit");
+      setResetTrigger((prev) => prev + 1);
+      setZoomPercent(100);
+      setResetRotation2DTrigger((prev) => prev + 1);
+
       setIsLoading(true);
       fetchSessionReplay(year, event, session, lapStart, lapEnd, 10)
         .then((data) => {
           setPayload(data);
           playback.seekTo(0);
+          playback.setSelectedDriverCode(null);
+          setCameraMode("orbit");
+          setResetTrigger((prev) => prev + 1);
           setIsLoading(false);
           handleClosePicker();
         })
@@ -480,6 +529,7 @@ export default function ReplayDashboard() {
               <X className="w-4 h-4" />
             </button>
             <SessionPicker
+              currentSession={currentSession}
               onLoadSession={handleLoadSession}
               onLoadDemo={handleLoadDemo}
               isLoading={isLoading}

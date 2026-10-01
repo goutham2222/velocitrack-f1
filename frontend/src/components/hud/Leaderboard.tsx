@@ -112,14 +112,21 @@ export function Leaderboard({
                         FIN
                       </span>
                     )}
-                    {entry.drsThreat && entry.position > 1 && !entry.inPit && !entry.hasFinished && !entry.isDnf && (
+                    {entry.isDrsOpen && !entry.inPit && !entry.hasFinished && !entry.isDnf ? (
                       <span
-                        title="DRS threat within 1.0s"
-                        className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold border border-emerald-500/40 animate-pulse"
+                        title="DRS Active (Flap Open)"
+                        className="px-1.5 py-0.2 rounded bg-[#10B981] text-black text-[9px] font-mono font-black border border-[#10B981]"
                       >
                         DRS
                       </span>
-                    )}
+                    ) : entry.drsThreat && entry.position > 1 && !entry.inPit && !entry.hasFinished && !entry.isDnf ? (
+                      <span
+                        title="DRS Inactive (Within 1.0s Detection)"
+                        className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 text-[9px] font-mono font-bold border border-slate-700"
+                      >
+                        DRS
+                      </span>
+                    ) : null}
                   </div>
 
                   {/* Right: Gap, Compound & Race Lap */}

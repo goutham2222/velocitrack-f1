@@ -16,7 +16,17 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 
+export interface ActiveSessionContext {
+  year: number;
+  eventName: string;
+  sessionCode?: string;
+  lapStart?: number;
+  lapEnd?: number;
+  totalLaps?: number;
+}
+
 interface SessionPickerProps {
+  currentSession?: ActiveSessionContext | null;
   onLoadSession: (
     year: number,
     event: string,
@@ -29,26 +39,43 @@ interface SessionPickerProps {
 }
 
 export function SessionPicker({
+  currentSession,
   onLoadSession,
   onLoadDemo,
   isLoading,
 }: SessionPickerProps) {
   const [years, setYears] = useState<number[]>([2024, 2023, 2022, 2021]);
-  const [selectedYear, setSelectedYear] = useState<number>(2024);
+  const [selectedYear, setSelectedYear] = useState<number>(currentSession?.year ?? 2024);
 
   const [events, setEvents] = useState<EventInfo[]>([]);
-  const [selectedEvent, setSelectedEvent] = useState<string>("Monaco Grand Prix");
+  const [selectedEvent, setSelectedEvent] = useState<string>(
+    currentSession?.eventName ?? "Monaco Grand Prix"
+  );
 
   const [sessions, setSessions] = useState<SessionInfo[]>([
     { name: "Race", code: "R", date: "2024-05-26" },
     { name: "Qualifying", code: "Q", date: "2024-05-25" },
     { name: "Practice 1", code: "FP1", date: "2024-05-24" },
   ]);
-  const [selectedSession, setSelectedSession] = useState<string>("R");
+  const [selectedSession, setSelectedSession] = useState<string>(
+    currentSession?.sessionCode ?? "R"
+  );
 
-  const [lapStart, setLapStart] = useState<number>(1);
-  const [lapEnd, setLapEnd] = useState<number>(3);
-  const [maxLaps, setMaxLaps] = useState<number>(78);
+  const [lapStart, setLapStart] = useState<number>(currentSession?.lapStart ?? 1);
+  const [lapEnd, setLapEnd] = useState<number>(currentSession?.lapEnd ?? 3);
+  const [maxLaps, setMaxLaps] = useState<number>(currentSession?.totalLaps ?? 78);
+
+  // Synchronize state when active currentSession updates
+  useEffect(() => {
+    if (currentSession) {
+      if (currentSession.year) setSelectedYear(currentSession.year);
+      if (currentSession.eventName) setSelectedEvent(currentSession.eventName);
+      if (currentSession.sessionCode) setSelectedSession(currentSession.sessionCode);
+      if (currentSession.lapStart) setLapStart(currentSession.lapStart);
+      if (currentSession.lapEnd) setLapEnd(currentSession.lapEnd);
+      if (currentSession.totalLaps) setMaxLaps(currentSession.totalLaps);
+    }
+  }, [currentSession]);
 
   // Fetch years on mount
   useEffect(() => {
@@ -64,12 +91,30 @@ export function SessionPicker({
     fetchEvents(selectedYear).then((evList) => {
       if (evList.length > 0) {
         setEvents(evList);
-        // Default to Monaco or first event
-        const monaco = evList.find((e) => e.event_name.includes("Monaco"));
-        setSelectedEvent(monaco ? monaco.event_name : evList[0].event_name);
+        // If the active currentSession matches this year, keep currentSession.eventName
+        const activeMatch =
+          currentSession && currentSession.year === selectedYear
+            ? evList.find(
+                (e) =>
+                  e.event_name.toLowerCase() === currentSession.eventName.toLowerCase() ||
+                  e.event_name.toLowerCase().includes(currentSession.eventName.toLowerCase()) ||
+                  currentSession.eventName.toLowerCase().includes(e.event_name.toLowerCase())
+              )
+            : null;
+
+        if (activeMatch) {
+          setSelectedEvent(activeMatch.event_name);
+        } else {
+          // If selectedEvent is valid for this year, retain it
+          const currentMatch = evList.find((e) => e.event_name === selectedEvent);
+          if (!currentMatch) {
+            const monaco = evList.find((e) => e.event_name.includes("Monaco"));
+            setSelectedEvent(monaco ? monaco.event_name : evList[0].event_name);
+          }
+        }
       }
     });
-  }, [selectedYear]);
+  }, [selectedYear, currentSession]);
 
   // Fetch sessions when event changes
   useEffect(() => {
@@ -78,15 +123,21 @@ export function SessionPicker({
       if (details) {
         if (details.sessions && details.sessions.length > 0) {
           setSessions(details.sessions);
-          const race = details.sessions.find((s) => s.code === "R");
-          setSelectedSession(race ? "R" : details.sessions[0].code);
+          const currentCode = currentSession?.sessionCode;
+          const matchCode = details.sessions.find((s) => s.code === currentCode);
+          if (matchCode) {
+            setSelectedSession(matchCode.code);
+          } else {
+            const race = details.sessions.find((s) => s.code === "R");
+            setSelectedSession(race ? "R" : details.sessions[0].code);
+          }
         }
         if (details.total_laps) {
           setMaxLaps(details.total_laps);
         }
       }
     });
-  }, [selectedYear, selectedEvent]);
+  }, [selectedYear, selectedEvent, currentSession]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

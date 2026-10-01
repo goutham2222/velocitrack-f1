@@ -82,17 +82,16 @@ export function CameraRig({
 
     if (!isInitializedRef.current || circuitChanged) {
       isInitializedRef.current = true;
-      if (mode === "orbit") {
-        camera.position.set(overviewPos.x, overviewPos.y, overviewPos.z);
-        currentTargetRef.current.copy(overviewCenter);
-        camera.lookAt(overviewCenter);
-        if (controlsRef.current) {
-          controlsRef.current.target.copy(overviewCenter);
-          controlsRef.current.update();
-        }
+      isTransitioningRef.current = false;
+      camera.position.set(overviewPos.x, overviewPos.y, overviewPos.z);
+      currentTargetRef.current.copy(overviewCenter);
+      camera.lookAt(overviewCenter);
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(overviewCenter);
+        controlsRef.current.update();
       }
     }
-  }, [circuit, overviewPos, overviewCenter, camera, mode]);
+  }, [circuit, overviewPos, overviewCenter, camera]);
 
   // 3. Wheel listener for Cursor-Anchored Zoom (like Google Maps, CAD, and GIS tools)
   useEffect(() => {
