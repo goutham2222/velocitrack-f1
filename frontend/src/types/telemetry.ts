@@ -6,6 +6,7 @@ export interface EventInfo {
   event_name: string;
   event_date: string;
   event_format: string;
+  is_completed?: boolean;
 }
 
 export interface SessionInfo {

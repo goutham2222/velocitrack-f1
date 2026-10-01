@@ -26,9 +26,9 @@ export function Leaderboard({
   const [collapsed, setCollapsed] = useState<boolean>(false);
 
   return (
-    <div className="w-80 flex flex-col glass-panel rounded-xl overflow-hidden border border-white/10 shadow-2xl transition-all duration-200">
+    <div className="w-80 flex flex-col max-h-[calc(100vh-140px)] glass-panel rounded-xl overflow-hidden border border-white/10 shadow-2xl transition-all duration-200">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-titanium-900/90 border-b border-white/10">
+      <div className="flex items-center justify-between px-3 py-2 bg-titanium-900/90 border-b border-white/10 flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
           <span className="text-xs font-mono font-bold tracking-wider text-slate-200 uppercase">
@@ -46,7 +46,7 @@ export function Leaderboard({
 
       {!collapsed && (
         <>
-          <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-white/5 text-[9px] font-mono text-slate-400 uppercase tracking-wider">
+          <div className="flex items-center justify-between px-3 py-1 bg-black/50 border-b border-white/5 text-[9px] font-mono text-slate-400 uppercase tracking-wider flex-shrink-0">
             <span>POS / DRIVER</span>
             <div className="flex items-center gap-2">
               <span className="w-20 text-right">GAP</span>
@@ -55,7 +55,7 @@ export function Leaderboard({
             </div>
           </div>
 
-          <div className="flex flex-col max-h-[calc(100vh-280px)] overflow-y-auto divide-y divide-white/5">
+          <div className="flex flex-col flex-1 min-h-0 max-h-[calc(100vh-220px)] overflow-y-auto divide-y divide-white/5">
             {entries.map((entry) => {
               const isSelected = entry.code === selectedDriverCode;
               const compoundStyle =
@@ -82,7 +82,7 @@ export function Leaderboard({
                     </span>
                     <div
                       className="w-1 h-4 rounded-sm flex-shrink-0"
-                      style={{ backgroundColor: entry.teamColor }}
+                      style={{ backgroundColor: entry.teamColor || "#94A3B8" }}
                     />
                     <span className="font-mono text-xs font-bold text-slate-100 tracking-wide">
                       {entry.code}

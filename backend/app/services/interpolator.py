@@ -1,5 +1,6 @@
 import logging
 import math
+from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
@@ -29,12 +30,59 @@ TEAM_COLORS = {
     "Alpine": "#0093CC",
     "Williams": "#64C4FF",
     "RB": "#6692FF",
+    "Racing Bulls": "#6692FF",
+    "VCARB": "#6692FF",
     "AlphaTauri": "#6692FF",
     "Kick Sauber": "#52E252",
+    "Sauber": "#52E252",
     "Alfa Romeo": "#C92D4B",
     "Haas F1 Team": "#B6BABD",
     "Haas": "#B6BABD",
+    "Audi": "#E21B23",
+    "Cadillac": "#FFC72C",
+    "Cadillac F1": "#FFC72C",
+    "Andretti": "#E01E37",
+    "Porsche": "#C3002F",
 }
+
+
+def get_deterministic_team_color(name: str) -> str:
+    """
+    Dynamically derives a vibrant, deterministic hex color from a team name.
+    Ensures that unknown or newly entering teams (e.g. Audi, Cadillac, Porsche)
+    receive a distinct, visually legible hue instead of falling back to black.
+    """
+    if not name:
+        return "#94A3B8"
+    h = 0
+    for char in name:
+        h = (h << 5) - h + ord(char)
+        h &= 0xFFFFFFFF
+
+    hue = (h % 360) / 360.0
+    sat = 0.75 + ((h >> 8) % 15) / 100.0
+    lit = 0.52 + ((h >> 16) % 12) / 100.0
+
+    def hue_to_rgb(p, q, t):
+        if t < 0:
+            t += 1
+        if t > 1:
+            t -= 1
+        if t < 1 / 6:
+            return p + (q - p) * 6 * t
+        if t < 1 / 2:
+            return q
+        if t < 2 / 3:
+            return p + (q - p) * (2 / 3 - t) * 6
+        return p
+
+    q = lit * (1 + sat) if lit < 0.5 else lit + sat - lit * sat
+    p = 2 * lit - q
+    r = int(hue_to_rgb(p, q, hue + 1 / 3) * 255)
+    g = int(hue_to_rgb(p, q, hue) * 255)
+    b = int(hue_to_rgb(p, q, hue - 1 / 3) * 255)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
 
 
 def generate_pit_lane(
@@ -566,9 +614,32 @@ def build_replay_payload_from_session(
             num = int(drv_info.get("DriverNumber", 0))
             full_name = f"{drv_info.get('FirstName', '')} {drv_info.get('LastName', '')}".strip() or code
             team = str(drv_info.get("TeamName", "Unknown Team"))
-            color = TEAM_COLORS.get(team, "#FFFFFF")
+            color = None
             if "TeamColor" in drv_info and drv_info["TeamColor"]:
-                color = f"#{drv_info['TeamColor']}"
+                raw_col = str(drv_info["TeamColor"]).strip()
+                if raw_col and raw_col.lower() != "nan":
+                    color = f"#{raw_col}" if not raw_col.startswith("#") else raw_col
+
+            if not color or color in ["#000000", "black", "#"]:
+                if team in TEAM_COLORS:
+                    color = TEAM_COLORS[team]
+                else:
+                    team_lower = team.lower()
+                    for k, v in TEAM_COLORS.items():
+                        if k.lower() in team_lower or team_lower in k.lower():
+                            color = v
+                            break
+
+            if not color or color in ["#000000", "black", "#"]:
+                try:
+                    import fastf1.plotting
+                    color = fastf1.plotting.get_team_color(team, session=session)
+                except Exception:
+                    color = None
+
+            if not color or color in ["#000000", "black", "#"]:
+                color = get_deterministic_team_color(team)
+
 
             # Official session result alignment & DNF determination
             official_res_map = {res.driver_code.upper(): res for res in official_results}
@@ -948,7 +1019,7 @@ def build_replay_payload_from_session(
     actual_lap_end = int(target_laps["LapNumber"].dropna().max()) if not target_laps.empty else lap_end
 
     metadata = ReplayMetadata(
-        year=int(session.event.get("Year", 2024)),
+        year=int(session.event.get("Year", datetime.now(timezone.utc).year)),
         event_name=str(session.event.get("EventName", "Grand Prix")),
         session_name=str(session.name),
         circuit_name=circuit_geometry.circuit_name,

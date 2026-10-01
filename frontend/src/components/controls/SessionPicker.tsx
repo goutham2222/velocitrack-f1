@@ -44,8 +44,15 @@ export function SessionPicker({
   onLoadDemo,
   isLoading,
 }: SessionPickerProps) {
-  const [years, setYears] = useState<number[]>([2024, 2023, 2022, 2021]);
-  const [selectedYear, setSelectedYear] = useState<number>(currentSession?.year ?? 2024);
+  const currentYear = new Date().getFullYear();
+  const [years, setYears] = useState<number[]>(() => {
+    const list: number[] = [];
+    for (let y = currentYear; y >= 2018; y--) {
+      list.push(y);
+    }
+    return list;
+  });
+  const [selectedYear, setSelectedYear] = useState<number>(currentSession?.year ?? currentYear);
 
   const [events, setEvents] = useState<EventInfo[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<string>(
@@ -53,9 +60,9 @@ export function SessionPicker({
   );
 
   const [sessions, setSessions] = useState<SessionInfo[]>([
-    { name: "Race", code: "R", date: "2024-05-26" },
-    { name: "Qualifying", code: "Q", date: "2024-05-25" },
-    { name: "Practice 1", code: "FP1", date: "2024-05-24" },
+    { name: "Race", code: "R", date: `${currentYear}-05-26` },
+    { name: "Qualifying", code: "Q", date: `${currentYear}-05-25` },
+    { name: "Practice 1", code: "FP1", date: `${currentYear}-05-24` },
   ]);
   const [selectedSession, setSelectedSession] = useState<string>(
     currentSession?.sessionCode ?? "R"
@@ -91,25 +98,32 @@ export function SessionPicker({
     fetchEvents(selectedYear).then((evList) => {
       if (evList.length > 0) {
         setEvents(evList);
-        // If the active currentSession matches this year, keep currentSession.eventName
+        // If the active currentSession matches this year, keep currentSession.eventName if completed
         const activeMatch =
           currentSession && currentSession.year === selectedYear
             ? evList.find(
                 (e) =>
-                  e.event_name.toLowerCase() === currentSession.eventName.toLowerCase() ||
-                  e.event_name.toLowerCase().includes(currentSession.eventName.toLowerCase()) ||
-                  currentSession.eventName.toLowerCase().includes(e.event_name.toLowerCase())
+                  e.is_completed !== false &&
+                  (e.event_name.toLowerCase() === currentSession.eventName.toLowerCase() ||
+                    e.event_name.toLowerCase().includes(currentSession.eventName.toLowerCase()) ||
+                    currentSession.eventName.toLowerCase().includes(e.event_name.toLowerCase()))
               )
             : null;
 
         if (activeMatch) {
           setSelectedEvent(activeMatch.event_name);
         } else {
-          // If selectedEvent is valid for this year, retain it
-          const currentMatch = evList.find((e) => e.event_name === selectedEvent);
-          if (!currentMatch) {
-            const monaco = evList.find((e) => e.event_name.includes("Monaco"));
-            setSelectedEvent(monaco ? monaco.event_name : evList[0].event_name);
+          // If selectedEvent is valid and completed for this year, retain it
+          const currentMatch = evList.find(
+            (e) => e.event_name === selectedEvent && e.is_completed !== false
+          );
+          if (currentMatch) {
+            setSelectedEvent(currentMatch.event_name);
+          } else {
+            const completed = evList.filter((e) => e.is_completed !== false);
+            const pool = completed.length > 0 ? completed : evList;
+            const monaco = pool.find((e) => e.event_name.includes("Monaco"));
+            setSelectedEvent(monaco ? monaco.event_name : pool[0].event_name);
           }
         }
       }
@@ -139,8 +153,12 @@ export function SessionPicker({
     });
   }, [selectedYear, selectedEvent, currentSession]);
 
+  const selectedEventObj = events.find((e) => e.event_name === selectedEvent);
+  const isSelectedEventUpcoming = selectedEventObj?.is_completed === false;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSelectedEventUpcoming) return;
     onLoadSession(selectedYear, selectedEvent, selectedSession, lapStart, lapEnd);
   };
 
@@ -189,20 +207,39 @@ export function SessionPicker({
 
           {/* Grand Prix Picker */}
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-              Grand Prix
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+                Grand Prix
+              </label>
+              {isSelectedEventUpcoming && (
+                <span className="text-[9px] font-mono font-bold text-amber-400 uppercase">
+                  Upcoming
+                </span>
+              )}
+            </div>
             <select
               value={selectedEvent}
               onChange={(e) => setSelectedEvent(e.target.value)}
               disabled={isLoading}
               className="bg-titanium-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-red-500 truncate"
             >
-              {events.map((ev) => (
-                <option key={ev.round_number} value={ev.event_name} className="bg-titanium-950">
-                  {ev.event_name}
-                </option>
-              ))}
+              {events.map((ev) => {
+                const isUpcoming = ev.is_completed === false;
+                return (
+                  <option
+                    key={ev.round_number}
+                    value={ev.event_name}
+                    disabled={isUpcoming}
+                    className={
+                      isUpcoming
+                        ? "text-slate-500 bg-titanium-950 italic"
+                        : "bg-titanium-950"
+                    }
+                  >
+                    {ev.event_name} {isUpcoming ? "(Upcoming)" : ""}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -257,14 +294,16 @@ export function SessionPicker({
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-xs font-mono font-bold tracking-wider uppercase transition shadow-lg disabled:opacity-50"
+          disabled={isLoading || isSelectedEventUpcoming}
+          className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-xs font-mono font-bold tracking-wider uppercase transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? (
             <>
               <RefreshCw className="w-4 h-4 animate-spin text-white" />
               <span>ALIGNING MULTI-CAR TELEMETRY...</span>
             </>
+          ) : isSelectedEventUpcoming ? (
+            <span>ROUND UPCOMING — REPLAY UNAVAILABLE</span>
           ) : (
             <span>LOAD RACE REPLAY</span>
           )}

@@ -13,7 +13,12 @@ export async function fetchAvailableYears(): Promise<number[]> {
     return await res.json();
   } catch (err) {
     console.warn("Using fallback seasons:", err);
-    return [2024, 2023, 2022, 2021, 2020];
+    const currentYear = new Date().getFullYear();
+    const yrs: number[] = [];
+    for (let y = currentYear; y >= 2018; y--) {
+      yrs.push(y);
+    }
+    return yrs;
   }
 }
 

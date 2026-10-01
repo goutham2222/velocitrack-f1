@@ -14,6 +14,8 @@ class EventInfo(BaseModel):
     event_name: str
     event_date: str
     event_format: str
+    is_completed: bool = True
+
 
 
 class SessionInfo(BaseModel):

@@ -37,6 +37,8 @@ OFFICIAL_DRIVERS = [
     {"code": "BOT", "number": 77, "name": "Valtteri Bottas", "team": "Kick Sauber", "color": "#52E252"},
     {"code": "ZHO", "number": 24, "name": "Guanyu Zhou", "team": "Kick Sauber", "color": "#52E252"},
     {"code": "SAR", "number": 2, "name": "Logan Sargeant", "team": "Williams", "color": "#64C4FF"},
+    {"code": "BEA", "number": 87, "name": "Oliver Bearman", "team": "Haas", "color": "#B6BABD"},
+    {"code": "ANT", "number": 12, "name": "Kimi Antonelli", "team": "Mercedes", "color": "#27F4D2"},
 ]
 
 # Monaco Circuit Key Waypoints (normalized scale in meters, with real elevation Z)

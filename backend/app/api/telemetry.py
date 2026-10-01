@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
+from typing import Optional
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from app.models.schemas import ReplayPayload
@@ -25,7 +27,7 @@ def get_demo_replay(
 
 @router.get("/replay", response_model=ReplayPayload)
 def get_session_replay(
-    year: int = Query(2024, ge=2018, le=2026),
+    year: Optional[int] = Query(None, ge=2018, description="F1 Season Year"),
     event: str = Query("Monaco Grand Prix"),
     session: str = Query("R", description="Session code: FP1, FP2, FP3, Q, S, R"),
     lap_start: int = Query(1, ge=1, le=100),
@@ -37,6 +39,25 @@ def get_session_replay(
     and returns aligned multi-car telemetry for the requested lap range.
     Falls back gracefully to high-fi simulation if data is unavailable.
     """
+    # Guard: Verify event has taken place
+    if year is None:
+        year = datetime.now(timezone.utc).year
+    try:
+        events = fastf1_client.get_events_for_year(year)
+        ev_match = next(
+            (e for e in events if e.event_name.lower() == event.lower() or event.lower() in e.event_name.lower()),
+            None,
+        )
+        if ev_match and not ev_match.is_completed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Replay telemetry unavailable: '{event}' ({year}) has not taken place yet.",
+            )
+    except HTTPException:
+        raise
+    except Exception as check_err:
+        logger.debug(f"Event completion pre-check error: {check_err}")
+
     try:
         f1_session = fastf1_client.load_fastf1_session(year, event, session)
         return interpolator.build_replay_payload_from_session(

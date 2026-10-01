@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import fastf1
 import pandas as pd
@@ -50,18 +51,37 @@ FALLBACK_POPULAR_EVENTS = [
 
 
 def get_available_years() -> List[int]:
-    """Returns available F1 seasons."""
-    return [2024, 2023, 2022, 2021, 2020, 2019, 2018]
+    """Returns available F1 seasons (2018 through current calendar year, descending)."""
+    current_year = datetime.now(timezone.utc).year
+    return list(range(current_year, 2017, -1))
+
+
+def is_event_completed(row, now_utc: datetime) -> bool:
+    """
+    Checks if a Grand Prix has concluded based on Session5DateUtc or EventDate.
+    """
+    date_val = row.get("Session5DateUtc")
+    if pd.isna(date_val):
+        date_val = row.get("EventDate")
+    if pd.isna(date_val):
+        return True
+    try:
+        ts = pd.to_datetime(date_val)
+        ts_utc = ts.tz_localize(timezone.utc) if ts.tzinfo is None else ts
+        return bool(ts_utc <= now_utc)
+    except Exception:
+        return True
 
 
 def get_events_for_year(year: int) -> List[EventInfo]:
     """
-    Returns calendar events for the given season.
+    Returns calendar events for the given season with is_completed flag.
     Caches results in memory for sub-millisecond future queries.
     """
     if year in _SCHEDULE_CACHE:
         return _SCHEDULE_CACHE[year]
 
+    now_utc = datetime.now(timezone.utc)
     events: List[EventInfo] = []
     try:
         schedule = fastf1.get_event_schedule(year, include_testing=False)
@@ -75,6 +95,8 @@ def get_events_for_year(year: int) -> List[EventInfo]:
             if hasattr(row.get("EventDate"), "strftime"):
                 event_date = row["EventDate"].strftime("%Y-%m-%d")
 
+            is_completed = is_event_completed(row, now_utc)
+
             events.append(
                 EventInfo(
                     round_number=round_num,
@@ -84,11 +106,14 @@ def get_events_for_year(year: int) -> List[EventInfo]:
                     event_name=str(row.get("EventName", "")),
                     event_date=event_date,
                     event_format=str(row.get("EventFormat", "conventional")),
+                    is_completed=is_completed,
                 )
             )
     except Exception as e:
         logger.warning(f"FastF1 schedule fetch failed for year {year}: {e}. Using fallback calendar.")
+        now_year = now_utc.year
         for item in FALLBACK_POPULAR_EVENTS:
+            fb_completed = (year < now_year) or (year == now_year and item["round"] <= 8)
             events.append(
                 EventInfo(
                     round_number=item["round"],
@@ -98,6 +123,7 @@ def get_events_for_year(year: int) -> List[EventInfo]:
                     event_name=item["name"],
                     event_date=f"{year}-06-01",
                     event_format=item["format"],
+                    is_completed=fb_completed,
                 )
             )
 
@@ -198,11 +224,8 @@ def get_event_details(year: int, event_name_or_round: str) -> EventDetailsRespon
                     total_laps = laps
                     break
 
-    drivers = [
-        "VER", "NOR", "LEC", "PIA", "SAI", "HAM", "RUS", "PER",
-        "ALO", "TSU", "STR", "HUL", "RIC", "ALB", "OCO", "GAS",
-        "MAG", "BOT", "ZHO", "SAR"
-    ]
+    from app.services.demo_data import OFFICIAL_DRIVERS
+    drivers = [d["code"] for d in OFFICIAL_DRIVERS]
 
     return EventDetailsResponse(
         year=year,

@@ -33,6 +33,7 @@ export default function ReplayDashboard() {
   const [payload, setPayload] = useState<ReplayPayload | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPickerOpen, setIsPickerOpen] = useState<boolean>(false);
+  const [hasCustomSession, setHasCustomSession] = useState<boolean>(false);
   const [resetTrigger, setResetTrigger] = useState<number>(0);
   const wasPlayingRef = useRef<boolean>(false);
 
@@ -91,9 +92,10 @@ export default function ReplayDashboard() {
 
   // Derived active session metadata for controlled session selector persistence
   const currentSession = useMemo<ActiveSessionContext | null>(() => {
-    if (!payload?.metadata) {
+    const currentYear = new Date().getFullYear();
+    if (!payload?.metadata || !hasCustomSession) {
       return {
-        year: 2024,
+        year: currentYear,
         eventName: "Monaco Grand Prix",
         sessionCode: "R",
         lapStart: 1,
@@ -109,7 +111,7 @@ export default function ReplayDashboard() {
       lapEnd: payload.metadata.lap_end || 3,
       totalLaps: payload.metadata.total_laps || 57,
     };
-  }, [payload?.metadata]);
+  }, [payload?.metadata, hasCustomSession]);
 
   // Load demo on initial mount for instant zero-wait startup
   useEffect(() => {
@@ -196,6 +198,7 @@ export default function ReplayDashboard() {
     setResetTrigger((prev) => prev + 1);
     setZoomPercent(100);
     setResetRotation2DTrigger((prev) => prev + 1);
+    setHasCustomSession(false);
 
     setIsLoading(true);
     fetchDemoReplay(10, 2)
@@ -227,6 +230,7 @@ export default function ReplayDashboard() {
       setResetTrigger((prev) => prev + 1);
       setZoomPercent(100);
       setResetRotation2DTrigger((prev) => prev + 1);
+      setHasCustomSession(true);
 
       setIsLoading(true);
       fetchSessionReplay(year, event, session, lapStart, lapEnd, 10)

@@ -2,7 +2,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.api import sessions, telemetry
+from app.api import sessions, telemetry, schedule
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,6 +28,8 @@ app.add_middleware(
 # Register routers
 app.include_router(sessions.router)
 app.include_router(telemetry.router)
+app.include_router(schedule.router)
+
 
 
 @app.get("/")
