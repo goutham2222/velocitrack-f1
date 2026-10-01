@@ -94,7 +94,15 @@ export function Leaderboard({
                         PIT{entry.pitDuration ? ` ${entry.pitDuration.toFixed(0)}s` : ""}
                       </span>
                     )}
-                    {entry.drsThreat && entry.position > 1 && !entry.inPit && (
+                    {entry.hasFinished && (
+                      <span
+                        title="Finished Race"
+                        className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold border border-emerald-500/40 flex items-center gap-1"
+                      >
+                        FIN
+                      </span>
+                    )}
+                    {entry.drsThreat && entry.position > 1 && !entry.inPit && !entry.hasFinished && (
                       <span
                         title="DRS threat within 1.0s"
                         className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold border border-emerald-500/40 animate-pulse"
@@ -106,8 +114,16 @@ export function Leaderboard({
 
                   {/* Right: Gap & Compound */}
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`font-mono text-[11px] font-medium w-16 text-right ${entry.inPit ? "text-amber-400 font-bold" : "text-slate-300"}`}>
-                      {entry.inPit ? "PIT" : (entry.position === 1 ? "LEADER" : entry.gapToLeader)}
+                    <span
+                      className={`font-mono text-[11px] w-16 text-right ${
+                        entry.inPit
+                          ? "text-amber-400 font-bold"
+                          : entry.gapToLeader === "WINNER"
+                          ? "text-yellow-400 font-black tracking-wide"
+                          : "text-slate-300 font-medium"
+                      }`}
+                    >
+                      {entry.inPit ? "PIT" : (entry.position === 1 ? (entry.hasFinished ? "WINNER" : "LEADER") : entry.gapToLeader)}
                     </span>
 
                     {/* Compound badge */}

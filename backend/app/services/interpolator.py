@@ -10,6 +10,7 @@ from app.models.schemas import (
     TurnMarker,
     DRSZone,
     DriverReplayStream,
+    OfficialResult,
     ReplayMetadata,
     ReplayPayload,
     WeatherSample,
@@ -132,6 +133,107 @@ def generate_pit_lane(
     return pit_points
 
 
+def get_lap_end_time(row) -> Optional[float]:
+    """
+    Safely retrieves or calculates the lap finish timestamp (in session seconds).
+    """
+    t_val = row.get("Time")
+    if pd.notnull(t_val) and hasattr(t_val, "total_seconds"):
+        return float(t_val.total_seconds())
+    st_val = row.get("LapStartTime")
+    lt_val = row.get("LapTime")
+    if (
+        pd.notnull(st_val)
+        and pd.notnull(lt_val)
+        and hasattr(st_val, "total_seconds")
+        and hasattr(lt_val, "total_seconds")
+    ):
+        return float(st_val.total_seconds() + lt_val.total_seconds())
+    return None
+
+
+def extract_official_results(session) -> List[OfficialResult]:
+    """
+    Extracts official classified race results from FastF1 session.results.
+    Computes authentic finish gaps ('WINNER', '+8.562s', '+1 LAP', 'DNF').
+    """
+    official_results: List[OfficialResult] = []
+    has_results = False
+    try:
+        if hasattr(session, "results") and session.results is not None and not session.results.empty:
+            has_results = True
+    except Exception:
+        has_results = False
+
+    if not has_results:
+        return []
+
+    try:
+        res_df = session.results.sort_values(by="Position")
+        winner_tot_s = None
+
+        for _, r in res_df.iterrows():
+            pos_val = r.get("Position")
+            if pd.isna(pos_val) or pos_val is None:
+                continue
+            try:
+                pos_int = int(pos_val)
+            except (ValueError, TypeError):
+                continue
+            if pos_int <= 0:
+                continue
+
+            code_val = str(r.get("Abbreviation", "")).upper()
+            if not code_val:
+                continue
+
+            num_val = None
+            if pd.notnull(r.get("DriverNumber")):
+                try:
+                    num_val = int(r["DriverNumber"])
+                except (ValueError, TypeError):
+                    pass
+
+            team_val = str(r.get("TeamName", ""))
+            status_val = str(r.get("Status", "Finished"))
+            pts_val = float(r["Points"]) if pd.notnull(r.get("Points")) else 0.0
+
+            time_str = None
+            t_val = r.get("Time")
+            if pos_int == 1:
+                time_str = "WINNER"
+                if pd.notnull(t_val) and hasattr(t_val, "total_seconds"):
+                    winner_tot_s = t_val.total_seconds()
+            else:
+                if pd.notnull(t_val) and hasattr(t_val, "total_seconds"):
+                    cur_tot_s = t_val.total_seconds()
+                    if winner_tot_s is not None and cur_tot_s > winner_tot_s:
+                        diff = cur_tot_s - winner_tot_s
+                        time_str = f"+{diff:.3f}s"
+                    elif cur_tot_s > 0:
+                        time_str = f"+{cur_tot_s:.3f}s"
+                elif "lap" in status_val.lower():
+                    time_str = status_val.upper()
+                elif status_val.lower() not in ["finished", "nan", ""]:
+                    time_str = status_val.upper()
+
+            official_results.append(
+                OfficialResult(
+                    position=pos_int,
+                    driver_code=code_val,
+                    driver_number=num_val,
+                    team=team_val,
+                    status=status_val,
+                    points=pts_val,
+                    time_or_gap=time_str,
+                )
+            )
+    except Exception as e:
+        logger.warning(f"Failed to extract official results from session: {e}")
+
+    return official_results
+
+
 def build_replay_payload_from_session(
     session,
     lap_start: int = 1,
@@ -183,6 +285,11 @@ def build_replay_payload_from_session(
     num_frames = int(duration * effective_sampling_rate)
     uniform_grid = np.linspace(t_start, t_end, num_frames)
     timestamps = [round(i * dt, 2) for i in range(num_frames)]
+
+    # Official session classification and race finish detection
+    official_results = extract_official_results(session)
+    session_total_laps = int(laps_df["LapNumber"].dropna().max()) if not laps_df.empty else lap_end
+    is_race_finish_session = (lap_end >= session_total_laps)
 
     # 2. Circuit Geometry extraction & Start Line Alignment
     fastest_lap = laps_df.pick_fastest()
@@ -333,6 +440,22 @@ def build_replay_payload_from_session(
             if len(tel_times) < 2:
                 continue
 
+            # Driver's overall laps across the entire session to identify official finish milestone
+            all_drv_laps = laps_df.pick_driver(drv_id) if (laps_df is not None and not laps_df.empty) else drv_laps
+            finish_time: Optional[float] = None
+            driver_total_laps: int = session_total_laps
+
+            if is_race_finish_session and all_drv_laps is not None and not all_drv_laps.empty:
+                valid_laps = all_drv_laps[all_drv_laps["Time"].notna()]
+                if not valid_laps.empty:
+                    last_lap_row = valid_laps.iloc[-1]
+                    finish_time = get_lap_end_time(last_lap_row)
+                    driver_total_laps = int(last_lap_row.get("LapNumber", session_total_laps))
+                elif not all_drv_laps.empty:
+                    last_lap_row = all_drv_laps.iloc[-1]
+                    finish_time = get_lap_end_time(last_lap_row)
+                    driver_total_laps = int(last_lap_row.get("LapNumber", session_total_laps))
+
             # Driver metadata
             drv_info = session.get_driver(drv_id)
             code = str(drv_info.get("Abbreviation", drv_id))
@@ -370,6 +493,8 @@ def build_replay_payload_from_session(
                 # Determine starting distance and lap
                 unwrapped_dist = np.zeros(num_frames, dtype=float)
                 computed_laps = np.zeros(num_frames, dtype=int)
+                has_finished_arr = [False] * num_frames
+                d_finish = float(driver_total_laps * L)
 
                 # For Lap 1 start, cars are lined up on the grid behind the start/finish line.
                 # Grid spots have raw_s > 0.5 * L (near the end of the circuit loop before the line).
@@ -388,8 +513,8 @@ def build_replay_payload_from_session(
                     # Mid-race session start: identify driver's current lap at uniform_grid[0]
                     init_lap = lap_start
                     for _, r in drv_laps.iterrows():
-                        st = r["LapStartTime"].total_seconds() if pd.notnull(r["LapStartTime"]) else 0
-                        et = r["Time"].total_seconds() if pd.notnull(r["Time"]) else float('inf')
+                        st = r["LapStartTime"].total_seconds() if pd.notnull(r["LapStartTime"]) and hasattr(r["LapStartTime"], "total_seconds") else 0
+                        et = r["Time"].total_seconds() if pd.notnull(r["Time"]) and hasattr(r["Time"], "total_seconds") else float('inf')
                         if st <= uniform_grid[0] <= et:
                             init_lap = int(r["LapNumber"])
                             break
@@ -397,8 +522,23 @@ def build_replay_payload_from_session(
                     unwrapped_dist[0] = laps_completed * L + s0
                     computed_laps[0] = init_lap
 
-                # Unwrapped continuous forward distance integration
+                # Check frame 0 finish state
+                if finish_time is not None and uniform_grid[0] >= finish_time:
+                    has_finished_arr[0] = True
+                    unwrapped_dist[0] = d_finish
+                    computed_laps[0] = driver_total_laps
+
+                # Unwrapped continuous forward distance integration with race finish clamping
                 for f in range(1, num_frames):
+                    t_frame = uniform_grid[f]
+
+                    # 1. Race finish check by official timestamp: freeze distance at finish line
+                    if finish_time is not None and t_frame >= finish_time:
+                        has_finished_arr[f] = True
+                        unwrapped_dist[f] = d_finish
+                        computed_laps[f] = driver_total_laps
+                        continue
+
                     raw_ds = raw_s[f] - raw_s[f - 1]
                     ds = raw_ds
 
@@ -419,14 +559,22 @@ def build_replay_payload_from_session(
                     else:
                         ds = max(0.0, ds)
 
-                    unwrapped_dist[f] = unwrapped_dist[f - 1] + ds
-                    computed_laps[f] = lap_start + laps_completed
+                    cur_dist = unwrapped_dist[f - 1] + ds
+
+                    # 2. Race finish check by completed distance
+                    if is_race_finish_session and cur_dist >= d_finish:
+                        cur_dist = d_finish
+                        has_finished_arr[f] = True
+
+                    unwrapped_dist[f] = cur_dist
+                    computed_laps[f] = min(driver_total_laps, lap_start + laps_completed)
 
                 track_dist_arr = [round(float(v), 1) for v in unwrapped_dist]
                 lap_nums = computed_laps
             else:
                 track_dist_arr = [0.0] * num_frames
                 lap_nums = [lap_start] * num_frames
+                has_finished_arr = [False] * num_frames
 
             # Nearest-neighbor for discrete channels
             gear_raw = drv_telemetry["nGear"].fillna(0).to_numpy() if "nGear" in drv_telemetry else np.ones_like(tel_times)
@@ -556,6 +704,7 @@ def build_replay_payload_from_session(
                 pit_status=pit_status_arr,
                 is_pitting=is_pitting_arr,
                 pit_duration=pit_duration_arr,
+                has_finished=has_finished_arr,
             )
         except Exception as e:
             logger.warning(f"Error processing driver {drv_id}: {e}")
@@ -621,6 +770,7 @@ def build_replay_payload_from_session(
         lap_start=lap_start,
         lap_end=actual_lap_end,
         total_laps=len(laps_df["LapNumber"].unique()),
+        official_results=official_results,
     )
 
     return ReplayPayload(

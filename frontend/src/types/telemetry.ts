@@ -59,6 +59,16 @@ export interface CircuitGeometry {
   pit_lane?: number[][];
 }
 
+export interface OfficialResult {
+  position: number;
+  driver_code: string;
+  driver_number?: number;
+  team?: string;
+  status: string;
+  points?: number;
+  time_or_gap?: string;
+}
+
 export interface DriverReplayStream {
   code: string;
   number: number;
@@ -81,6 +91,7 @@ export interface DriverReplayStream {
   pit_status: string[];
   is_pitting?: boolean[];
   pit_duration?: (number | null)[];
+  has_finished?: boolean[];
 }
 
 export interface TelemetrySample {
@@ -100,6 +111,7 @@ export interface TelemetrySample {
   pit_status: string;
   is_pitting: boolean;
   pit_duration?: number | null;
+  has_finished?: boolean;
 }
 
 export interface WeatherSample {
@@ -126,6 +138,7 @@ export interface ReplayMetadata {
   lap_start: number;
   lap_end: number;
   total_laps: number;
+  official_results?: OfficialResult[];
 }
 
 export interface ReplayPayload {
@@ -162,6 +175,7 @@ export interface InterpolatedDriverState {
   pitStatus: string;
   is_pitting: boolean;
   pit_duration?: number | null;
+  has_finished?: boolean;
 }
 
 export interface LeaderboardEntry {
@@ -180,6 +194,8 @@ export interface LeaderboardEntry {
   drsThreat: boolean;
   inPit: boolean;
   pitDuration?: number | null;
+  hasFinished?: boolean;
+  officialStatus?: string;
 }
 
 export type CameraMode = "orbit" | "chase";

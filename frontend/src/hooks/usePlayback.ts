@@ -5,6 +5,7 @@ import {
   ReplayPayload,
   InterpolatedDriverState,
   LeaderboardEntry,
+  OfficialResult,
   PlaybackSpeed,
   WeatherSample,
 } from "@/types/telemetry";
@@ -237,6 +238,10 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         pitStatus.includes("PIT")
       );
       const pit_duration = stream.pit_duration?.[k] ?? null;
+      const streamRecord = stream as Record<string, any>;
+      const has_finished = Boolean(
+        Array.isArray(streamRecord.has_finished) ? streamRecord.has_finished[k] : false
+      );
 
       const driverObj: InterpolatedDriverState = {
         code,
@@ -260,14 +265,50 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         pitStatus,
         is_pitting,
         pit_duration,
+        has_finished,
       };
 
       driversMap[code] = driverObj;
       leaderboardRaw.push({ driver: driverObj, distance });
     }
 
-    // Sort running order by total distance completed descending
-    leaderboardRaw.sort((a, b) => b.distance - a.distance);
+    // Build lookup map for official session results
+    const officialResultsMap = new Map<string, OfficialResult>();
+    const officialList = (payload?.metadata as any)?.official_results;
+    if (Array.isArray(officialList)) {
+      for (const res of officialList as OfficialResult[]) {
+        if (res && res.driver_code) {
+          officialResultsMap.set(res.driver_code.toUpperCase(), res);
+        }
+      }
+    }
+
+    // Sort running order:
+    // 1. If both drivers have completed the race (has_finished), anchor their order strictly to official FIA results
+    // 2. A driver who has completed the race distance is always ahead of any driver still racing on earlier laps
+    // 3. While actively racing, sort by live cumulative track distance completed
+    leaderboardRaw.sort((a, b) => {
+      const aFinished = a.driver.has_finished;
+      const bFinished = b.driver.has_finished;
+
+      if (aFinished && bFinished) {
+        const aOfficial = officialResultsMap.get(a.driver.code.toUpperCase());
+        const bOfficial = officialResultsMap.get(b.driver.code.toUpperCase());
+        if (aOfficial?.position !== undefined && bOfficial?.position !== undefined) {
+          return aOfficial.position - bOfficial.position;
+        }
+        return b.distance - a.distance;
+      }
+
+      if (aFinished && !bFinished) {
+        return -1;
+      }
+      if (!aFinished && bFinished) {
+        return 1;
+      }
+
+      return b.distance - a.distance;
+    });
 
     // Build real-time Leaderboard with accurate intervals
     const leaderboard: LeaderboardEntry[] = [];
@@ -287,7 +328,14 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       let intervalToAhead = "LEADER";
       let drsThreat = false;
 
-      if (i > 0) {
+      const officialRes = officialResultsMap.get(drv.code.toUpperCase());
+      const isFinished = drv.has_finished;
+      const leaderFinished = leaderboardRaw[0]?.driver.has_finished;
+
+      if (i === 0) {
+        gapToLeader = isFinished ? "WINNER" : "LEADER";
+        intervalToAhead = isFinished ? "WINNER" : "LEADER";
+      } else {
         const prevItem = leaderboardRaw[i - 1];
         const distToPrev = Math.max(0, prevItem.distance - item.distance);
         const distToLeader = Math.max(0, leaderDist - item.distance);
@@ -298,7 +346,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         let leaderSec = distToLeader / racePaceMs;
 
         // Enforce strictly monotonic non-decreasing gaps down the timing tower
-        // Eliminates out-of-order gap anomalies (Issue 2)
+        // Eliminates out-of-order gap anomalies
         if (leaderSec <= prevLeaderSec) {
           leaderSec = prevLeaderSec + 0.01;
         }
@@ -312,7 +360,11 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         // MUST keep showing their live second delta, NOT "+1 LAP".
         const isLapped = distToLeader >= circuitLength * 0.75;
 
-        if (isLapped) {
+        // If both this driver and the race leader have crossed the finish line,
+        // anchor gap to authoritative official race result
+        if (isFinished && leaderFinished && officialRes?.time_or_gap) {
+          gapToLeader = officialRes.time_or_gap;
+        } else if (isLapped) {
           const lapsBehind = Math.max(1, Math.round(distToLeader / circuitLength));
           gapToLeader = `+${lapsBehind} ${lapsBehind === 1 ? "LAP" : "LAPS"}`;
         } else {
@@ -320,7 +372,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         }
 
         intervalToAhead = `+${intervalSec.toFixed(3)}s`;
-        drsThreat = !isLapped && intervalSec <= 1.0;
+        drsThreat = !isLapped && !isFinished && intervalSec <= 1.0;
       }
 
       leaderboard.push({
@@ -339,6 +391,8 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         drsThreat,
         inPit: drv.is_pitting || drv.pitStatus.includes("PIT"),
         pitDuration: drv.pit_duration,
+        hasFinished: isFinished,
+        officialStatus: officialRes?.status,
       });
     }
 

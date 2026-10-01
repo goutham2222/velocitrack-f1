@@ -7,6 +7,7 @@ from app.models.schemas import (
     TurnMarker,
     DRSZone,
     DriverReplayStream,
+    OfficialResult,
     ReplayMetadata,
     ReplayPayload,
     WeatherSample,
@@ -241,6 +242,7 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
         pit_arr = []
         is_pitting_arr = []
         pit_duration_arr = []
+        has_finished_arr = []
 
         curr_dist = initial_distance_offset
         current_lap = 1
@@ -299,8 +301,15 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
                 raw_spd = speed_profile_kmh[cl_idx] + (math.cos(t * 0.2 + rank) * 3.0)
                 spd = max(55.0, min(295.0, raw_spd))
 
-            # Move distance forward for next frame
-            curr_dist += (spd / 3.6) * dt
+            # Move distance forward for next frame with race finish clamping
+            d_finish = laps * track_length
+            is_finished = curr_dist >= d_finish
+            has_finished_arr.append(is_finished)
+
+            if not is_finished:
+                curr_dist += (spd / 3.6) * dt
+            else:
+                curr_dist = d_finish
 
             # Compute Gear and RPM
             if spd < 75:
@@ -391,6 +400,7 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
             pit_status=pit_arr,
             is_pitting=is_pitting_arr,
             pit_duration=pit_duration_arr,
+            has_finished=has_finished_arr,
         )
 
     # Weather & Race Control simulation
@@ -427,6 +437,20 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
         ),
     ]
 
+    # Official classified results for 2024 Monaco GP
+    official_results = [
+        OfficialResult(
+            position=idx + 1,
+            driver_code=d["code"],
+            driver_number=d["number"],
+            team=d["team"],
+            status="Finished",
+            points=25.0 if idx == 0 else (18.0 if idx == 1 else (15.0 if idx == 2 else (12.0 if idx == 3 else (10.0 if idx == 4 else (8.0 if idx == 5 else (6.0 if idx == 6 else (4.0 if idx == 7 else (2.0 if idx == 8 else (1.0 if idx == 9 else 0.0))))))))),
+            time_or_gap="WINNER" if idx == 0 else f"+{(idx * 1.842):.3f}s",
+        )
+        for idx, d in enumerate(OFFICIAL_DRIVERS)
+    ]
+
     metadata = ReplayMetadata(
         year=2024,
         event_name="Monaco Grand Prix",
@@ -440,6 +464,7 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
         lap_start=1,
         lap_end=laps,
         total_laps=78,
+        official_results=official_results,
     )
 
     return ReplayPayload(

@@ -94,6 +94,7 @@ async def stream_live_telemetry(
                         "lap": payload.drivers[drv].lap[frame_idx],
                         "compound": payload.drivers[drv].compound[frame_idx],
                         "tyre_life": payload.drivers[drv].tyre_life[frame_idx],
+                        "has_finished": payload.drivers[drv].has_finished[frame_idx] if payload.drivers[drv].has_finished and len(payload.drivers[drv].has_finished) > frame_idx else False,
                     }
                     for drv in payload.drivers
                 },

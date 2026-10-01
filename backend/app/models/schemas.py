@@ -105,6 +105,17 @@ class TelemetrySample(BaseModel):
     pit_status: str = "TRACK"
     is_pitting: bool = False
     pit_duration: Optional[float] = None
+    has_finished: bool = False
+
+
+class OfficialResult(BaseModel):
+    position: int
+    driver_code: str
+    driver_number: Optional[int] = None
+    team: Optional[str] = None
+    status: str = "Finished"
+    points: Optional[float] = None
+    time_or_gap: Optional[str] = None
 
 
 class DriverReplayStream(BaseModel):
@@ -129,6 +140,7 @@ class DriverReplayStream(BaseModel):
     pit_status: List[str]
     is_pitting: List[bool] = Field(default_factory=list)
     pit_duration: Optional[List[Optional[float]]] = None
+    has_finished: List[bool] = Field(default_factory=list)
 
 
 class WeatherSample(BaseModel):
@@ -155,6 +167,7 @@ class ReplayMetadata(BaseModel):
     lap_start: int
     lap_end: int
     total_laps: int
+    official_results: Optional[List[OfficialResult]] = None
 
 
 class ReplayPayload(BaseModel):
