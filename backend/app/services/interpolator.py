@@ -258,7 +258,9 @@ def get_lap_end_time(row) -> Optional[float]:
 def extract_official_results(session) -> List[OfficialResult]:
     """
     Extracts official classified race results from FastF1 session.results.
-    Computes authentic finish gaps ('WINNER', '+8.562s', '+1 LAP', 'DNF').
+    Computes authentic finish gaps ('WINNER', '+8.562s', '+1 LAP', 'DNF', 'DNS', 'DSQ').
+    Retains all entered drivers, ensuring non-starters (DNS), disqualifications (DSQ),
+    and unclassified DNF entries (Position: NaN) are preserved and sorted cleanly.
     """
     official_results: List[OfficialResult] = []
     has_results = False
@@ -277,12 +279,23 @@ def extract_official_results(session) -> List[OfficialResult]:
                 driver_summaries = []
                 for drv_id in getattr(session, "drivers", []):
                     drv_laps = laps_df.pick_driver(drv_id)
-                    if drv_laps.empty:
-                        continue
                     drv_info = session.get_driver(drv_id)
                     code_val = str(drv_info.get("Abbreviation", drv_id)).upper()
                     num_val = int(drv_info.get("DriverNumber", 0)) if pd.notnull(drv_info.get("DriverNumber")) else None
                     team_val = str(drv_info.get("TeamName", ""))
+
+                    if drv_laps.empty:
+                        driver_summaries.append({
+                            "code": code_val,
+                            "num": num_val,
+                            "team": team_val,
+                            "max_l": 0,
+                            "last_t": pd.Timedelta(days=99),
+                            "is_dnf": False,
+                            "is_dns": True,
+                        })
+                        continue
+
                     valid_laps = drv_laps[drv_laps["Time"].notna()]
                     if valid_laps.empty:
                         max_l = 0
@@ -300,21 +313,19 @@ def extract_official_results(session) -> List[OfficialResult]:
                         "max_l": max_l,
                         "last_t": last_t,
                         "is_dnf": is_dnf,
+                        "is_dns": (max_l == 0),
                     })
 
-                finishers = [d for d in driver_summaries if not d["is_dnf"]]
+                finishers = [d for d in driver_summaries if not d["is_dnf"] and not d["is_dns"]]
                 finishers.sort(key=lambda d: (-d["max_l"], d["last_t"]))
-                dnfs = [d for d in driver_summaries if d["is_dnf"]]
+                dnfs = [d for d in driver_summaries if d["is_dnf"] and not d["is_dns"]]
                 dnfs.sort(key=lambda d: -d["max_l"])
-                sorted_drivers = finishers + dnfs
+                dns_list = [d for d in driver_summaries if d["is_dns"]]
 
-                if sorted_drivers:
-                    winner_t = sorted_drivers[0]["last_t"]
-                    for pos, d in enumerate(sorted_drivers, 1):
-                        if d["is_dnf"]:
-                            gap_val = "DNF"
-                            st_val = "DNF"
-                        elif pos == 1:
+                if finishers:
+                    winner_t = finishers[0]["last_t"]
+                    for pos, d in enumerate(finishers, 1):
+                        if pos == 1:
                             gap_val = "WINNER"
                             st_val = "Finished"
                         elif d["max_l"] == max_race_laps:
@@ -335,34 +346,58 @@ def extract_official_results(session) -> List[OfficialResult]:
                                 status=st_val,
                                 points=0.0,
                                 time_or_gap=gap_val,
+                                laps_completed=d["max_l"],
                             )
                         )
-                    return official_results
+
+                next_pos = len(finishers) + 1
+                for d in dnfs:
+                    official_results.append(
+                        OfficialResult(
+                            position=next_pos,
+                            driver_code=d["code"],
+                            driver_number=d["num"],
+                            team=d["team"],
+                            status="DNF",
+                            points=0.0,
+                            time_or_gap="DNF",
+                            laps_completed=d["max_l"],
+                        )
+                    )
+                    next_pos += 1
+
+                for d in dns_list:
+                    official_results.append(
+                        OfficialResult(
+                            position=None,
+                            driver_code=d["code"],
+                            driver_number=d["num"],
+                            team=d["team"],
+                            status="DNS",
+                            points=0.0,
+                            time_or_gap="DNS",
+                            laps_completed=0,
+                        )
+                    )
+                return official_results
         except Exception as fallback_err:
             logger.warning(f"Fallback official results extraction failed: {fallback_err}")
         return []
 
     try:
-        res_df = session.results.sort_values(by="Position")
+        entries = []
         winner_tot_s = None
 
-        for _, r in res_df.iterrows():
-            pos_val = r.get("Position")
-            if pd.isna(pos_val) or pos_val is None:
-                continue
-            try:
-                pos_int = int(pos_val)
-            except (ValueError, TypeError):
-                continue
-            if pos_int <= 0:
-                continue
-
-            code_val = str(r.get("Abbreviation", "")).upper()
+        for _, r in session.results.iterrows():
+            c_num = str(r.get("DriverNumber", "")).strip()
+            code_val = str(r.get("Abbreviation", c_num)).strip().upper()
             if not code_val:
                 continue
 
             num_val = None
-            if pd.notnull(r.get("DriverNumber")):
+            if c_num and c_num.isdigit():
+                num_val = int(c_num)
+            elif pd.notnull(r.get("DriverNumber")):
                 try:
                     num_val = int(r["DriverNumber"])
                 except (ValueError, TypeError):
@@ -370,29 +405,81 @@ def extract_official_results(session) -> List[OfficialResult]:
 
             team_val = str(r.get("TeamName", ""))
             status_val = str(r.get("Status", "Finished"))
-            pts_val = float(r["Points"]) if pd.notnull(r.get("Points")) else 0.0
-
-            time_str = None
-            t_val = r.get("Time")
             status_lower = status_val.lower().strip()
-            is_dnf_status = (
+            pts_val = float(r["Points"]) if pd.notnull(r.get("Points")) else 0.0
+            t_val = r.get("Time")
+            pos_val = r.get("Position")
+
+            pos_int: Optional[int] = None
+            if pd.notnull(pos_val):
+                try:
+                    p = int(float(pos_val))
+                    if p > 0:
+                        pos_int = p
+                except (ValueError, TypeError):
+                    pos_int = None
+
+            # Calculate total laps completed by driver across entire session
+            laps_completed_count = 0
+            if hasattr(session, "laps") and session.laps is not None and not session.laps.empty:
+                drv_laps_all = session.laps.pick_driver(c_num) if c_num else None
+                if drv_laps_all is None or drv_laps_all.empty:
+                    drv_laps_all = session.laps.pick_driver(code_val)
+                if drv_laps_all is not None and not drv_laps_all.empty:
+                    valid_l = drv_laps_all[drv_laps_all["LapNumber"].notna()]
+                    if not valid_l.empty:
+                        laps_completed_count = int(valid_l["LapNumber"].max())
+
+            classified_pos = str(r.get("ClassifiedPosition", "")).strip().upper()
+
+            is_dns = (
                 any(term in status_lower for term in [
-                    "retired", "collision", "accident", "spun", "brake", "engine",
-                    "dnf", "damage", "puncture", "power unit", "gearbox", "suspension",
-                    "electrical", "hydraulics", "radiator", "driveshaft", "overheating",
-                    "vibration", "handling", "throttle", "water pressure", "oil pressure",
-                    "disqualified", "excluded", "withdrew", "mechanical", "dsq", "nc"
+                    "did not start", "dns", "didnotstart", "not started", "withdrew"
                 ])
-                or (status_lower not in ["finished", "nan", ""] and "lap" not in status_lower and not status_lower.startswith("+") and pd.isna(t_val))
+                or classified_pos == "DNS"
+                or (laps_completed_count == 0 and pos_int is None)
             )
 
-            if pos_int == 1:
+            is_dsq = (
+                any(term in status_lower for term in [
+                    "disqualified", "dsq", "excluded"
+                ])
+                or classified_pos == "DSQ"
+            )
+
+            is_dnf = (
+                not is_dns
+                and not is_dsq
+                and (
+                    any(term in status_lower for term in [
+                        "retired", "collision", "accident", "spun", "brake", "engine",
+                        "dnf", "damage", "puncture", "power unit", "gearbox", "suspension",
+                        "electrical", "hydraulics", "radiator", "driveshaft", "overheating",
+                        "vibration", "handling", "throttle", "water pressure", "oil pressure",
+                        "mechanical", "nc"
+                    ])
+                    or classified_pos in ["NC", "RET", "DNF"]
+                    or (status_lower not in ["finished", "nan", ""] and "lap" not in status_lower and not status_lower.startswith("+") and pd.isna(t_val))
+                )
+            )
+
+            time_str = None
+            if is_dns:
+                time_str = "DNS"
+                status_val = "DNS"
+                pos_int = None
+            elif is_dsq:
+                time_str = "DSQ"
+                status_val = "DSQ"
+                pos_int = None
+            elif is_dnf:
+                time_str = "DNF"
+                status_val = "DNF"
+                # Keep pos_int if officially classified (>= 90% distance), else None
+            elif pos_int == 1:
                 time_str = "WINNER"
                 if pd.notnull(t_val) and hasattr(t_val, "total_seconds"):
                     winner_tot_s = t_val.total_seconds()
-            elif is_dnf_status:
-                time_str = "DNF"
-                status_val = "DNF"
             elif "lap" in status_lower or status_lower.startswith("+"):
                 import re
                 lap_match = re.search(r"\d+", status_val)
@@ -409,15 +496,63 @@ def extract_official_results(session) -> List[OfficialResult]:
             else:
                 time_str = status_val.upper()
 
+            entries.append({
+                "code_val": code_val,
+                "num_val": num_val,
+                "team_val": team_val,
+                "status_val": status_val,
+                "pts_val": pts_val,
+                "time_str": time_str,
+                "pos_int": pos_int,
+                "laps_completed": laps_completed_count,
+                "is_dns": is_dns,
+                "is_dsq": is_dsq,
+                "is_dnf": is_dnf,
+            })
+
+        # Categorize into ordered groups:
+        # 1. Active Finishers
+        finishers = [d for d in entries if not d["is_dnf"] and not d["is_dns"] and not d["is_dsq"]]
+        finishers.sort(key=lambda d: d["pos_int"] if d["pos_int"] is not None else 999)
+
+        # 2. Classified DNFs (completed >= 90% distance, officially assigned finishing position by FIA)
+        classified_dnfs = [d for d in entries if d["is_dnf"] and d["pos_int"] is not None]
+        classified_dnfs.sort(key=lambda d: d["pos_int"])
+
+        # 3. Unclassified DNFs (retired earlier, Position: NaN, sorted by laps completed descending)
+        unclassified_dnfs = [d for d in entries if d["is_dnf"] and d["pos_int"] is None]
+        unclassified_dnfs.sort(key=lambda d: -d["laps_completed"])
+
+        # Assign sequential positions for unclassified DNFs
+        max_pos = max([d["pos_int"] for d in (finishers + classified_dnfs) if d["pos_int"] is not None], default=len(finishers))
+        next_pos = max_pos + 1
+        for d in unclassified_dnfs:
+            d["pos_int"] = next_pos
+            next_pos += 1
+
+        # 4. Non-Starters (DNS)
+        dns_entries = [d for d in entries if d["is_dns"]]
+        dns_entries.sort(key=lambda d: (d["num_val"] if d["num_val"] is not None else 999))
+        for d in dns_entries:
+            d["pos_int"] = None
+
+        # 5. Disqualifications (DSQ)
+        dsq_entries = [d for d in entries if d["is_dsq"]]
+        dsq_entries.sort(key=lambda d: (d["num_val"] if d["num_val"] is not None else 999))
+        for d in dsq_entries:
+            d["pos_int"] = None
+
+        for d in (finishers + classified_dnfs + unclassified_dnfs + dns_entries + dsq_entries):
             official_results.append(
                 OfficialResult(
-                    position=pos_int,
-                    driver_code=code_val,
-                    driver_number=num_val,
-                    team=team_val,
-                    status=status_val,
-                    points=pts_val,
-                    time_or_gap=time_str,
+                    position=d["pos_int"],
+                    driver_code=d["code_val"],
+                    driver_number=d["num_val"],
+                    team=d["team_val"],
+                    status=d["status_val"],
+                    points=d["pts_val"],
+                    time_or_gap=d["time_str"],
+                    laps_completed=d["laps_completed"],
                 )
             )
     except Exception as e:
@@ -643,34 +778,69 @@ def build_replay_payload_from_session(
 
     # 3. Synchronize drivers & compute monotonic track progress
     drivers_dict: Dict[str, DriverReplayStream] = {}
-    participating_drivers = session.drivers
     scale = 0.1  # FastF1 decimeters to meters
 
-    for drv_id in participating_drivers:
+    # Build universal comprehensive roster from session.results and session.drivers
+    roster = []
+    seen_codes = set()
+
+    if hasattr(session, "results") and session.results is not None and not session.results.empty:
+        for _, row in session.results.iterrows():
+            c_num = str(row.get("DriverNumber", "")).strip()
+            c_code = str(row.get("Abbreviation", c_num)).strip().upper()
+            if c_code:
+                seen_codes.add(c_code)
+                roster.append({
+                    "car_number": c_num,
+                    "code": c_code,
+                    "first_name": str(row.get("FirstName", "")),
+                    "last_name": str(row.get("LastName", "")),
+                    "full_name": str(row.get("FullName", "")),
+                    "team": str(row.get("TeamName", "Unknown Team")),
+                    "team_color": str(row.get("TeamColor", "")),
+                    "status": str(row.get("Status", "Finished")),
+                    "position": row.get("Position"),
+                    "points": row.get("Points"),
+                })
+
+    if hasattr(session, "drivers") and session.drivers is not None:
+        for drv_id in session.drivers:
+            try:
+                d_info = session.get_driver(drv_id)
+                c_num = str(d_info.get("DriverNumber", drv_id)).strip()
+                c_code = str(d_info.get("Abbreviation", c_num)).strip().upper()
+                if c_code and c_code not in seen_codes:
+                    seen_codes.add(c_code)
+                    roster.append({
+                        "car_number": c_num,
+                        "code": c_code,
+                        "first_name": str(d_info.get("FirstName", "")),
+                        "last_name": str(d_info.get("LastName", "")),
+                        "full_name": str(d_info.get("FullName", "")),
+                        "team": str(d_info.get("TeamName", "Unknown Team")),
+                        "team_color": str(d_info.get("TeamColor", "")),
+                        "status": "Finished",
+                        "position": None,
+                        "points": None,
+                    })
+            except Exception:
+                pass
+
+    official_res_map = {res.driver_code.upper(): res for res in official_results}
+
+    for driver_entry in roster:
+        car_number = driver_entry["car_number"]
+        code = driver_entry["code"]
+        num = int(car_number) if car_number.isdigit() else 0
+        full_name = f"{driver_entry['first_name']} {driver_entry['last_name']}".strip() or driver_entry["full_name"] or code
+        team = driver_entry["team"]
+        raw_team_color = driver_entry["team_color"]
+
         try:
-            drv_laps = target_laps.pick_driver(drv_id)
-            if drv_laps.empty:
-                continue
-
-            drv_telemetry = drv_laps.get_telemetry()
-            if drv_telemetry.empty or "SessionTime" not in drv_telemetry:
-                continue
-
-            # Convert SessionTime to float seconds
-            tel_times = drv_telemetry["SessionTime"].dt.total_seconds().to_numpy()
-            if len(tel_times) < 2:
-                continue
-
-            # Driver's overall laps across the entire session to identify official finish milestone
-            # Driver metadata
-            drv_info = session.get_driver(drv_id)
-            code = str(drv_info.get("Abbreviation", drv_id)).upper()
-            num = int(drv_info.get("DriverNumber", 0))
-            full_name = f"{drv_info.get('FirstName', '')} {drv_info.get('LastName', '')}".strip() or code
-            team = str(drv_info.get("TeamName", "Unknown Team"))
+            # Color derivation
             color = None
-            if "TeamColor" in drv_info and drv_info["TeamColor"]:
-                raw_col = str(drv_info["TeamColor"]).strip()
+            if raw_team_color:
+                raw_col = raw_team_color.strip()
                 if raw_col and raw_col.lower() != "nan":
                     color = f"#{raw_col}" if not raw_col.startswith("#") else raw_col
 
@@ -694,15 +864,130 @@ def build_replay_payload_from_session(
             if not color or color in ["#000000", "black", "#"]:
                 color = get_deterministic_team_color(team)
 
+            # Dual Abbreviation & Number Resolution
+            drv_laps = target_laps.pick_driver(car_number) if (car_number and target_laps is not None and not target_laps.empty) else None
+            if drv_laps is None or drv_laps.empty:
+                drv_laps = target_laps.pick_driver(code) if (target_laps is not None and not target_laps.empty) else None
 
-            # Official session result alignment & DNF determination
-            official_res_map = {res.driver_code.upper(): res for res in official_results}
+            all_drv_laps = laps_df.pick_driver(car_number) if (car_number and laps_df is not None and not laps_df.empty) else None
+            if all_drv_laps is None or all_drv_laps.empty:
+                all_drv_laps = laps_df.pick_driver(code) if (laps_df is not None and not laps_df.empty) else None
+
             drv_official = official_res_map.get(code)
-            # Driver's overall laps across the entire session to identify official finish milestone
-            all_drv_laps = laps_df.pick_driver(drv_id) if (laps_df is not None and not laps_df.empty) else drv_laps
+            st_lower = driver_entry["status"].lower().strip()
+            is_dns = (
+                any(term in st_lower for term in ["did not start", "dns", "didnotstart", "not started", "withdrew"])
+                or (drv_official and drv_official.status == "DNS")
+                or (all_drv_laps is None or all_drv_laps.empty)
+            )
+
+            if is_dns:
+                # DNS / Non-starter entry: no coordinate buffers, flagged is_dns: True, is_active: all False
+                drivers_dict[code] = DriverReplayStream(
+                    code=code,
+                    number=num,
+                    full_name=full_name,
+                    team=team,
+                    team_color=color,
+                    x=[],
+                    y=[],
+                    z=[],
+                    speed=[],
+                    rpm=[],
+                    gear=[],
+                    throttle=[],
+                    brake=[],
+                    drs=[],
+                    distance=[0.0] * num_frames,
+                    lap=[0] * num_frames,
+                    compound=["UNKNOWN"] * num_frames,
+                    tyre_life=[0] * num_frames,
+                    pit_status=["DNS"] * num_frames,
+                    is_pitting=[False] * num_frames,
+                    pit_duration=[None] * num_frames,
+                    has_finished=[False] * num_frames,
+                    is_dnf=False,
+                    is_dns=True,
+                    final_status="DNS",
+                    laps_completed=0,
+                    is_active=[False] * num_frames,
+                )
+                continue
+
+            drv_telemetry = drv_laps.get_telemetry() if (drv_laps is not None and not drv_laps.empty) else pd.DataFrame()
+            if drv_telemetry.empty or "SessionTime" not in drv_telemetry:
+                # Driver completed laps earlier in the race, but retired before this requested window
+                completed_laps = int(all_drv_laps["LapNumber"].dropna().max()) if (all_drv_laps is not None and not all_drv_laps.empty) else 0
+                drivers_dict[code] = DriverReplayStream(
+                    code=code,
+                    number=num,
+                    full_name=full_name,
+                    team=team,
+                    team_color=color,
+                    x=[],
+                    y=[],
+                    z=[],
+                    speed=[],
+                    rpm=[],
+                    gear=[],
+                    throttle=[],
+                    brake=[],
+                    drs=[],
+                    distance=[round(float(completed_laps * total_track_length), 1)] * num_frames,
+                    lap=[completed_laps] * num_frames,
+                    compound=["HARD"] * num_frames,
+                    tyre_life=[0] * num_frames,
+                    pit_status=["DNF"] * num_frames,
+                    is_pitting=[False] * num_frames,
+                    pit_duration=[None] * num_frames,
+                    has_finished=[False] * num_frames,
+                    is_dnf=True,
+                    is_dns=False,
+                    final_status="DNF",
+                    laps_completed=completed_laps,
+                    is_active=[False] * num_frames,
+                )
+                continue
+
+            # Convert SessionTime to float seconds
+            tel_times = drv_telemetry["SessionTime"].dt.total_seconds().to_numpy()
+            if len(tel_times) < 2:
+                completed_laps = int(all_drv_laps["LapNumber"].dropna().max()) if (all_drv_laps is not None and not all_drv_laps.empty) else 0
+                drivers_dict[code] = DriverReplayStream(
+                    code=code,
+                    number=num,
+                    full_name=full_name,
+                    team=team,
+                    team_color=color,
+                    x=[],
+                    y=[],
+                    z=[],
+                    speed=[],
+                    rpm=[],
+                    gear=[],
+                    throttle=[],
+                    brake=[],
+                    drs=[],
+                    distance=[round(float(completed_laps * total_track_length), 1)] * num_frames,
+                    lap=[completed_laps] * num_frames,
+                    compound=["HARD"] * num_frames,
+                    tyre_life=[0] * num_frames,
+                    pit_status=["DNF"] * num_frames,
+                    is_pitting=[False] * num_frames,
+                    pit_duration=[None] * num_frames,
+                    has_finished=[False] * num_frames,
+                    is_dnf=True,
+                    is_dns=False,
+                    final_status="DNF",
+                    laps_completed=completed_laps,
+                    is_active=[False] * num_frames,
+                )
+                continue
+
             finish_time: Optional[float] = None
             retirement_time: Optional[float] = None
             driver_total_laps: int = session_total_laps
+            is_driver_classified_finisher: bool = False
             is_driver_classified_finisher: bool = False
 
             is_dnf = False
@@ -995,10 +1280,17 @@ def build_replay_payload_from_session(
                 pit_duration=pit_duration_arr,
                 has_finished=has_finished_arr,
                 is_dnf=is_dnf,
+                is_dns=False,
+                final_status="DNF" if is_dnf else (drv_official.status if drv_official else "Finished"),
+                laps_completed=(
+                    int(all_drv_laps["LapNumber"].dropna().max())
+                    if (all_drv_laps is not None and not all_drv_laps.empty)
+                    else (int(max(lap_nums)) if len(lap_nums) > 0 else 0)
+                ),
                 is_active=is_active_arr,
             )
         except Exception as e:
-            logger.warning(f"Error processing driver {drv_id}: {e}")
+            logger.warning(f"Error processing driver {code}: {e}")
 
     # Fallback to demo if drivers list is empty
     if not drivers_dict or circuit_geometry is None:

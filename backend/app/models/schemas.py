@@ -113,13 +113,14 @@ class TelemetrySample(BaseModel):
 
 
 class OfficialResult(BaseModel):
-    position: int
+    position: Optional[int] = None
     driver_code: str
     driver_number: Optional[int] = None
     team: Optional[str] = None
     status: str = "Finished"
     points: Optional[float] = None
     time_or_gap: Optional[str] = None
+    laps_completed: Optional[int] = None
 
 
 class DriverReplayStream(BaseModel):
@@ -128,24 +129,27 @@ class DriverReplayStream(BaseModel):
     full_name: str
     team: str
     team_color: str
-    x: List[float]
-    y: List[float]
-    z: List[float]
-    speed: List[float]
-    rpm: List[int]
-    gear: List[int]
-    throttle: List[float]
-    brake: List[float]
-    drs: List[int]
-    distance: List[float]
-    lap: List[int]
-    compound: List[str]
-    tyre_life: List[int]
-    pit_status: List[str]
+    x: List[float] = Field(default_factory=list)
+    y: List[float] = Field(default_factory=list)
+    z: List[float] = Field(default_factory=list)
+    speed: List[float] = Field(default_factory=list)
+    rpm: List[int] = Field(default_factory=list)
+    gear: List[int] = Field(default_factory=list)
+    throttle: List[float] = Field(default_factory=list)
+    brake: List[float] = Field(default_factory=list)
+    drs: List[int] = Field(default_factory=list)
+    distance: List[float] = Field(default_factory=list)
+    lap: List[int] = Field(default_factory=list)
+    compound: List[str] = Field(default_factory=list)
+    tyre_life: List[int] = Field(default_factory=list)
+    pit_status: List[str] = Field(default_factory=list)
     is_pitting: List[bool] = Field(default_factory=list)
     pit_duration: Optional[List[Optional[float]]] = None
     has_finished: List[bool] = Field(default_factory=list)
     is_dnf: bool = False
+    is_dns: bool = False
+    final_status: Optional[str] = None
+    laps_completed: Optional[int] = None
     is_active: List[bool] = Field(default_factory=list)
 
 

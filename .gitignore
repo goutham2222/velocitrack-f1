@@ -28,6 +28,7 @@ __pycache__/
 cache/
 *.pkl
 *.feather
+circuits_data.json
 
 # Environment & credentials
 .env

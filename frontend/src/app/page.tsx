@@ -219,6 +219,10 @@ export default function ReplayDashboard() {
         handleResetCamera();
         return;
       }
+      const drv = playback.drivers[code];
+      if (drv?.is_dns) {
+        return;
+      }
       playback.setSelectedDriverCode(code);
       if (viewportMode === "3d") {
         setCameraMode("chase");

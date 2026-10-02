@@ -64,21 +64,26 @@ export function Leaderboard({
               return (
                 <div
                   key={entry.code}
-                  onClick={() => onSelectDriver(isSelected ? "" : entry.code)}
-                  className={`flex items-center justify-between px-3 py-1.5 cursor-pointer transition-colors duration-100 ${
-                    isSelected
-                      ? "bg-white/10 border-l-4 border-l-white"
+                  onClick={() => {
+                    if (entry.isDns) return;
+                    onSelectDriver(isSelected ? "" : entry.code);
+                  }}
+                  className={`flex items-center justify-between px-3 py-1.5 transition-colors duration-100 ${
+                    entry.isDns
+                      ? "bg-slate-900/40 border-l-4 border-l-slate-700/50 opacity-50 cursor-not-allowed select-none"
+                      : isSelected
+                      ? "bg-white/10 border-l-4 border-l-white cursor-pointer"
                       : entry.isDnf
-                      ? "bg-rose-500/5 hover:bg-rose-500/10 border-l-4 border-l-rose-500/40 opacity-75"
+                      ? "bg-rose-500/5 hover:bg-rose-500/10 border-l-4 border-l-rose-500/40 opacity-75 cursor-pointer"
                       : entry.inPit
-                      ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500"
-                      : "hover:bg-white/5 border-l-4 border-l-transparent"
+                      ? "bg-amber-500/10 hover:bg-amber-500/15 border-l-4 border-l-amber-500 cursor-pointer"
+                      : "hover:bg-white/5 border-l-4 border-l-transparent cursor-pointer"
                   }`}
                 >
                   {/* Left: Position & Driver Info */}
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-5 text-right font-mono text-[11px] font-bold text-slate-400">
-                      {entry.position}
+                      {entry.isDns ? "—" : entry.position}
                     </span>
                     <div
                       className="w-1 h-4 rounded-sm flex-shrink-0"
@@ -87,15 +92,23 @@ export function Leaderboard({
                     <span className="font-mono text-xs font-bold text-slate-100 tracking-wide">
                       {entry.code}
                     </span>
-                    {entry.isDnf && (
+                    {entry.isDns && (
+                      <span
+                        title="Did Not Start (DNS)"
+                        className="px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400 text-[9px] font-mono font-bold border border-slate-700/80 flex items-center gap-1"
+                      >
+                        DNS
+                      </span>
+                    )}
+                    {entry.isDnf && !entry.isDns && (
                       <span
                         title="Did Not Finish (DNF)"
                         className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[9px] font-mono font-bold border border-rose-500/40 flex items-center gap-1"
                       >
-                        DNF
+                        DNF{entry.lapsCompleted !== undefined ? ` | L${entry.lapsCompleted}` : (entry.lap > 0 ? ` | L${entry.lap}` : "")}
                       </span>
                     )}
-                    {entry.inPit && !entry.isDnf && (
+                    {entry.inPit && !entry.isDnf && !entry.isDns && (
                       <span
                         title={entry.pitDuration ? `In Pit Lane: ${entry.pitDuration.toFixed(1)}s` : "In Pit Lane"}
                         className="px-1.5 py-0.5 rounded bg-amber-500 text-black text-[9px] font-mono font-black uppercase tracking-wider border border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.6)] animate-pulse flex items-center gap-1"
@@ -104,7 +117,7 @@ export function Leaderboard({
                         PIT{entry.pitDuration ? ` ${entry.pitDuration.toFixed(0)}s` : ""}
                       </span>
                     )}
-                    {entry.hasFinished && !entry.isDnf && (
+                    {entry.hasFinished && !entry.isDnf && !entry.isDns && (
                       <span
                         title="Finished Race"
                         className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold border border-emerald-500/40 flex items-center gap-1"
@@ -112,14 +125,14 @@ export function Leaderboard({
                         FIN
                       </span>
                     )}
-                    {entry.isDrsOpen && !entry.inPit && !entry.hasFinished && !entry.isDnf ? (
+                    {entry.isDrsOpen && !entry.inPit && !entry.hasFinished && !entry.isDnf && !entry.isDns ? (
                       <span
                         title="DRS Active (Flap Open)"
                         className="px-1.5 py-[1px] rounded bg-[#10B981] text-black text-[9px] font-mono font-black border border-[#10B981]"
                       >
                         DRS
                       </span>
-                    ) : entry.drsThreat && entry.position > 1 && !entry.inPit && !entry.hasFinished && !entry.isDnf ? (
+                    ) : entry.drsThreat && typeof entry.position === "number" && entry.position > 1 && !entry.inPit && !entry.hasFinished && !entry.isDnf && !entry.isDns ? (
                       <span
                         title="DRS Inactive (Within 1.0s Detection)"
                         className="px-1.5 py-[1px] rounded bg-slate-800 text-slate-400 text-[9px] font-mono font-bold border border-slate-700"
@@ -133,7 +146,9 @@ export function Leaderboard({
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span
                       className={`font-mono text-[11px] w-20 text-right ${
-                        entry.isDnf
+                        entry.isDns
+                          ? "text-slate-500 font-bold"
+                          : entry.isDnf
                           ? "text-rose-400 font-bold"
                           : entry.inPit
                           ? "text-amber-400 font-bold"
@@ -142,7 +157,9 @@ export function Leaderboard({
                           : "text-slate-300 font-medium"
                       }`}
                     >
-                      {entry.isDnf
+                      {entry.isDns
+                        ? "—"
+                        : entry.isDnf
                         ? "DNF"
                         : entry.inPit
                         ? "PIT"
@@ -152,19 +169,28 @@ export function Leaderboard({
                     </span>
 
                     {/* Compound badge */}
-                    <div
-                      className={`w-5 h-5 rounded-full flex items-center justify-center border text-[10px] font-mono font-bold ${compoundStyle.bg} ${compoundStyle.text} ${compoundStyle.border}`}
-                      title={`${entry.compound} tyre, ${entry.tyreLife} laps old`}
-                    >
-                      {entry.compound.charAt(0).toUpperCase()}
-                    </div>
+                    {entry.isDns ? (
+                      <div
+                        className="w-5 h-5 rounded-full flex items-center justify-center border text-[10px] font-mono font-bold bg-slate-800/40 text-slate-500 border-slate-700/40"
+                        title="Did not start - No tyres fitted"
+                      >
+                        —
+                      </div>
+                    ) : (
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center border text-[10px] font-mono font-bold ${compoundStyle.bg} ${compoundStyle.text} ${compoundStyle.border}`}
+                        title={`${entry.compound} tyre, ${entry.tyreLife} laps old`}
+                      >
+                        {entry.compound.charAt(0).toUpperCase()}
+                      </div>
+                    )}
 
                     {/* Driver Current Race Lap */}
                     <span
                       className="text-[10px] font-mono font-bold text-slate-300 w-8 text-right"
-                      title={`Current Race Lap: ${entry.lap} (${entry.compound} tyre, ${entry.tyreLife} laps old)`}
+                      title={entry.isDns ? "Did Not Start (L0)" : `Current Race Lap: ${entry.lap} (${entry.compound} tyre, ${entry.tyreLife} laps old)`}
                     >
-                      L{entry.lap}
+                      {entry.isDns ? "L0" : `L${entry.lap}`}
                     </span>
                   </div>
                 </div>

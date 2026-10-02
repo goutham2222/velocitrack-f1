@@ -197,6 +197,11 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     const kp2 = Math.min(totalFrames - 1, k + 2);
     const kp1 = Math.min(totalFrames - 1, k + 1);
 
+    const circuitLength =
+      payload?.circuit?.track_length_m && payload.circuit.track_length_m > 500
+        ? payload.circuit.track_length_m
+        : 5500;
+
     const driversMap: Record<string, InterpolatedDriverState> = {};
     const leaderboardRaw: {
       driver: InterpolatedDriverState;
@@ -215,44 +220,101 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     }
 
     for (const [code, stream] of Object.entries(payload.drivers)) {
-      if (!stream.x || stream.x.length === 0) continue;
+      const isDnsEntry = Boolean(stream.is_dns);
+      const hasCoordinates = Boolean(stream.x && stream.x.length > 0);
 
-      // Catmull-Rom spline on 3D spatial coordinates
-      const x = catmullRom(
-        stream.x[km1] ?? stream.x[k],
-        stream.x[k],
-        stream.x[kp1],
-        stream.x[kp2] ?? stream.x[kp1],
-        alpha
-      );
-      const y = catmullRom(
-        stream.y[km1] ?? stream.y[k],
-        stream.y[k],
-        stream.y[kp1],
-        stream.y[kp2] ?? stream.y[kp1],
-        alpha
-      );
-      const z = catmullRom(
-        stream.z[km1] ?? stream.z[k],
-        stream.z[k],
-        stream.z[kp1],
-        stream.z[kp2] ?? stream.z[kp1],
-        alpha
-      );
+      // Handle non-starters (DNS) and drivers who retired prior to this replay window (no coordinates)
+      if (isDnsEntry || !hasCoordinates) {
+        const isDns = isDnsEntry && !stream.is_dnf;
+        const lapsDone = stream.laps_completed ?? (stream.lap?.[0] || 0);
+        const finalStatus = isDns ? "DNS" : (stream.final_status || "DNF");
+        const driverObj: InterpolatedDriverState = {
+          code,
+          number: stream.number,
+          name: stream.full_name,
+          team: stream.team,
+          teamColor: stream.team_color,
+          x: 0,
+          y: 0,
+          z: 0,
+          speed: 0,
+          rpm: 0,
+          gear: 0,
+          throttle: 0,
+          brake: 0,
+          drs: 0,
+          distance: isDns ? 0 : (stream.distance?.[0] ?? lapsDone * circuitLength),
+          lap: isDns ? 0 : (stream.lap?.[0] ?? lapsDone),
+          compound: stream.compound?.[0] || (isDns ? "UNKNOWN" : "HARD"),
+          tyreLife: 0,
+          pitStatus: isDns ? "DNS" : "DNF",
+          is_pitting: false,
+          pit_duration: null,
+          has_finished: false,
+          is_dnf: !isDns,
+          isDnf: !isDns,
+          is_dns: isDns,
+          isDns: isDns,
+          final_status: finalStatus,
+          finalStatus: finalStatus,
+          laps_completed: lapsDone,
+          lapsCompleted: lapsDone,
+          is_active: false,
+        };
+        driversMap[code] = driverObj;
+        leaderboardRaw.push({
+          driver: driverObj,
+          distance: isDns ? -999999999 : -500000000 + lapsDone,
+        });
+        continue;
+      }
 
-      // Linear interpolation on scalar telemetry
-      const speed = (1 - alpha) * stream.speed[k] + alpha * stream.speed[kp1];
-      const rpm = Math.round((1 - alpha) * stream.rpm[k] + alpha * stream.rpm[kp1]);
-      const throttle = (1 - alpha) * stream.throttle[k] + alpha * stream.throttle[kp1];
-      const brake = (1 - alpha) * stream.brake[k] + alpha * stream.brake[kp1];
-      const distance = (1 - alpha) * stream.distance[k] + alpha * stream.distance[kp1];
+      // Catmull-Rom spline on 3D spatial coordinates with safe clamping
+      const xKm1 = stream.x[km1] ?? stream.x[k] ?? 0;
+      const xK = stream.x[k] ?? 0;
+      const xKp1 = stream.x[kp1] ?? xK;
+      const xKp2 = stream.x[kp2] ?? xKp1;
+      const x = catmullRom(xKm1, xK, xKp1, xKp2, alpha);
 
-      // Discrete step values
-      const gear = stream.gear[k];
-      const drs = stream.drs[k];
-      const lap = stream.lap[k] || 1;
-      const compound = stream.compound[k] || "MEDIUM";
-      const tyreLife = stream.tyre_life[k] || 10;
+      const yKm1 = stream.y?.[km1] ?? stream.y?.[k] ?? 0;
+      const yK = stream.y?.[k] ?? 0;
+      const yKp1 = stream.y?.[kp1] ?? yK;
+      const yKp2 = stream.y?.[kp2] ?? yKp1;
+      const y = catmullRom(yKm1, yK, yKp1, yKp2, alpha);
+
+      const zKm1 = stream.z?.[km1] ?? stream.z?.[k] ?? 0;
+      const zK = stream.z?.[k] ?? 0;
+      const zKp1 = stream.z?.[kp1] ?? zK;
+      const zKp2 = stream.z?.[kp2] ?? zKp1;
+      const z = catmullRom(zKm1, zK, zKp1, zKp2, alpha);
+
+      // Linear interpolation on scalar telemetry with optional chaining guards
+      const speedK = stream.speed?.[k] ?? 0;
+      const speedKp1 = stream.speed?.[kp1] ?? speedK;
+      const speed = (1 - alpha) * speedK + alpha * speedKp1;
+
+      const rpmK = stream.rpm?.[k] ?? 0;
+      const rpmKp1 = stream.rpm?.[kp1] ?? rpmK;
+      const rpm = Math.round((1 - alpha) * rpmK + alpha * rpmKp1);
+
+      const throttleK = stream.throttle?.[k] ?? 0;
+      const throttleKp1 = stream.throttle?.[kp1] ?? throttleK;
+      const throttle = (1 - alpha) * throttleK + alpha * throttleKp1;
+
+      const brakeK = stream.brake?.[k] ?? 0;
+      const brakeKp1 = stream.brake?.[kp1] ?? brakeK;
+      const brake = (1 - alpha) * brakeK + alpha * brakeKp1;
+
+      const distK = stream.distance?.[k] ?? 0;
+      const distKp1 = stream.distance?.[kp1] ?? distK;
+      const distance = (1 - alpha) * distK + alpha * distKp1;
+
+      // Discrete step values with null coalescing
+      const gear = stream.gear?.[k] ?? 0;
+      const drs = stream.drs?.[k] ?? 0;
+      const lap = stream.lap?.[k] || 1;
+      const compound = stream.compound?.[k] || "MEDIUM";
+      const tyreLife = stream.tyre_life?.[k] || 10;
 
       const streamRecord = stream as Record<string, any>;
       const officialRes = officialResultsMap.get(code.toUpperCase());
@@ -273,6 +335,9 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       const has_finished = is_dnf ? false : Boolean(
         Array.isArray(streamRecord.has_finished) ? streamRecord.has_finished[k] : false
       );
+
+      const driverFinalStatus = is_dnf ? "DNF" : (stream.final_status || "Finished");
+      const driverLapsCompleted = stream.laps_completed ?? lap;
 
       const driverObj: InterpolatedDriverState = {
         code,
@@ -298,6 +363,13 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         pit_duration,
         has_finished,
         is_dnf,
+        isDnf: is_dnf,
+        is_dns: false,
+        isDns: false,
+        final_status: driverFinalStatus,
+        finalStatus: driverFinalStatus,
+        laps_completed: driverLapsCompleted,
+        lapsCompleted: driverLapsCompleted,
         is_active,
       };
 
@@ -306,20 +378,33 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     }
 
     // Sort running order:
-    // 1. DNF drivers are strictly anchored to the bottom of the field behind all running and finished cars
-    // 2. When both drivers have completed the race (has_finished), break ties using official classification
-    // 3. While actively racing, sort strictly by cumulative track distance completed
+    // 1. DNS drivers are strictly anchored to the absolute bottom of the field
+    // 2. DNF drivers are anchored behind all running and finished cars
+    // 3. When both drivers have completed the race (has_finished), break ties using official classification
+    // 4. While actively racing, sort strictly by lap and cumulative track distance completed
     leaderboardRaw.sort((a, b) => {
-      const aDnf = a.driver.is_dnf;
-      const bDnf = b.driver.is_dnf;
+      const aDns = Boolean(a.driver.is_dns);
+      const bDns = Boolean(b.driver.is_dns);
+      if (aDns && !bDns) return 1;
+      if (!aDns && bDns) return -1;
+      if (aDns && bDns) {
+        return a.driver.number - b.driver.number;
+      }
 
+      const aDnf = Boolean(a.driver.is_dnf);
+      const bDnf = Boolean(b.driver.is_dnf);
       if (aDnf && !bDnf) return 1;
       if (!aDnf && bDnf) return -1;
       if (aDnf && bDnf) {
         const aOfficial = officialResultsMap.get(a.driver.code.toUpperCase());
         const bOfficial = officialResultsMap.get(b.driver.code.toUpperCase());
-        if (aOfficial?.position !== undefined && bOfficial?.position !== undefined) {
+        if (aOfficial?.position && bOfficial?.position) {
           return aOfficial.position - bOfficial.position;
+        }
+        const aLaps = a.driver.laps_completed ?? a.driver.lap;
+        const bLaps = b.driver.laps_completed ?? b.driver.lap;
+        if (aLaps !== bLaps) {
+          return bLaps - aLaps;
         }
         return b.distance - a.distance;
       }
@@ -331,7 +416,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       if (aFinished && bFinished) {
         const aOfficial = officialResultsMap.get(a.driver.code.toUpperCase());
         const bOfficial = officialResultsMap.get(b.driver.code.toUpperCase());
-        if (aOfficial?.position !== undefined && bOfficial?.position !== undefined) {
+        if (aOfficial?.position && bOfficial?.position) {
           return aOfficial.position - bOfficial.position;
         }
       }
@@ -348,16 +433,13 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     const leaderboard: LeaderboardEntry[] = [];
     const leaderDist = leaderboardRaw.length > 0 ? leaderboardRaw[0].distance : 0;
     const leaderLap = leaderboardRaw.length > 0 ? leaderboardRaw[0].driver.lap : 1;
-    const circuitLength =
-      payload?.circuit?.track_length_m && payload.circuit.track_length_m > 500
-        ? payload.circuit.track_length_m
-        : 5500;
 
     // Uniform reference race pace (m/s) across the circuit (~200-220 km/h)
     // Converts spatial distance deltas smoothly to time gaps without instantaneous speed noise
     const racePaceMs = Math.max(45, circuitLength / 95);
 
     let cumulativeGapSec = 0;
+    let runningPos = 1;
 
     for (let i = 0; i < leaderboardRaw.length; i++) {
       const item = leaderboardRaw[i];
@@ -367,9 +449,41 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       let drsThreat = false;
 
       const officialRes = officialResultsMap.get(drv.code.toUpperCase());
+      const isDns = Boolean(drv.is_dns);
       const isDnf = Boolean(drv.is_dnf);
       const isFinished = Boolean(drv.has_finished);
       const leaderFinished = Boolean(leaderboardRaw[0]?.driver.has_finished);
+
+      if (isDns) {
+        leaderboard.push({
+          position: "—",
+          code: drv.code,
+          name: drv.name,
+          team: drv.team,
+          teamColor: drv.teamColor,
+          speed: 0,
+          distance: 0,
+          lap: 0,
+          gapToLeader: "—",
+          intervalToAhead: "—",
+          compound: "—",
+          tyreLife: 0,
+          drsThreat: false,
+          drs: 0,
+          isDrsOpen: false,
+          inPit: false,
+          pitDuration: null,
+          hasFinished: false,
+          isDnf: false,
+          isDns: true,
+          lapsCompleted: 0,
+          is_active: false,
+          officialStatus: "DNS",
+        });
+        continue;
+      }
+
+      const currentPos = runningPos++;
 
       if (isDnf) {
         gapToLeader = "DNF";
@@ -430,7 +544,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
       }
 
       leaderboard.push({
-        position: i + 1,
+        position: currentPos,
         code: drv.code,
         name: drv.name,
         team: drv.team,
@@ -449,6 +563,8 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
         pitDuration: isDnf ? null : drv.pit_duration,
         hasFinished: isFinished,
         isDnf: isDnf,
+        isDns: false,
+        lapsCompleted: drv.laps_completed ?? drv.lap,
         is_active: drv.is_active,
         officialStatus: isDnf ? "DNF" : officialRes?.status,
       });
@@ -537,6 +653,7 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
     stepForward,
     stepBackward,
     interpolatedDrivers: interpolatedState?.drivers || {},
+    drivers: interpolatedState?.drivers || {},
     leaderboard: interpolatedState?.leaderboard || [],
     focusedDriver,
     currentWeather,

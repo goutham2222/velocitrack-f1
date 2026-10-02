@@ -61,13 +61,14 @@ export interface CircuitGeometry {
 }
 
 export interface OfficialResult {
-  position: number;
+  position?: number | null;
   driver_code: string;
   driver_number?: number;
   team?: string;
   status: string;
   points?: number;
   time_or_gap?: string;
+  laps_completed?: number;
 }
 
 export interface DriverReplayStream {
@@ -94,6 +95,9 @@ export interface DriverReplayStream {
   pit_duration?: (number | null)[];
   has_finished?: boolean[];
   is_dnf?: boolean;
+  is_dns?: boolean;
+  final_status?: string;
+  laps_completed?: number;
   is_active?: boolean[];
 }
 
@@ -191,11 +195,18 @@ export interface InterpolatedDriverState {
   pit_duration?: number | null;
   has_finished?: boolean;
   is_dnf?: boolean;
+  isDnf?: boolean;
+  is_dns?: boolean;
+  isDns?: boolean;
+  final_status?: string;
+  finalStatus?: string;
+  laps_completed?: number;
+  lapsCompleted?: number;
   is_active?: boolean;
 }
 
 export interface LeaderboardEntry {
-  position: number;
+  position: number | string;
   code: string;
   name: string;
   team: string;
@@ -214,6 +225,8 @@ export interface LeaderboardEntry {
   pitDuration?: number | null;
   hasFinished?: boolean;
   isDnf?: boolean;
+  isDns?: boolean;
+  lapsCompleted?: number;
   is_active?: boolean;
   officialStatus?: string;
 }

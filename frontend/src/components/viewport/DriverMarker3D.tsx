@@ -21,8 +21,8 @@ export function DriverMarker3D({
 }: DriverMarker3DProps) {
   const groupRef = useRef<THREE.Group>(null);
 
-  // Unmount completely if driver is retired/DNF on this frame (clears ghost cars from track surface)
-  if (driver.is_dnf || driver.is_active === false) {
+  // Unmount completely if driver is retired/DNF, DNS, or inactive (clears ghost cars from track surface)
+  if (driver.is_dnf || driver.is_active === false || driver.is_dns || (!driver.x && !driver.y && !driver.z)) {
     return null;
   }
 

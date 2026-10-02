@@ -160,9 +160,15 @@ export function ViewportContainer({
         {/* 3D Track & Environment */}
         <Track3D circuit={circuit} />
 
-        {/* Dynamic Drivers (retired DNF cars are completely unmounted) */}
+        {/* Dynamic Drivers (retired DNF cars and DNS non-starters are completely unmounted) */}
         {driverList
-          .filter((drv) => !drv.is_dnf && drv.is_active !== false)
+          .filter(
+            (drv) =>
+              !drv.is_dnf &&
+              drv.is_active !== false &&
+              !drv.is_dns &&
+              (drv.x !== 0 || drv.y !== 0 || drv.z !== 0)
+          )
           .map((drv) => (
             <DriverMarker3D
               key={drv.code}
