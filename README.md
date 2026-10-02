@@ -36,7 +36,7 @@
 - **Interactive Playback Controls:**
   - Global scrubber bar with lap markers and interactive timeline seeking.
   - Speed multipliers: `0.5x`, `1x`, `2x`, `4x`, `8x`, `16x`.
-  - Step jump controls (`-10s` / `+10s`), play/pause toggles, and keyboard shortcuts.
+  - Step jump controls (`-5s` / `+5s`), play/pause toggles, and keyboard shortcuts.
   - Cascading Season, Grand Prix, and Session selector with fuzzy year-over-year matching.
 
 ---
@@ -159,7 +159,6 @@ velocitrack-f1/
 ├── docker-compose.yml              # Local multi-container orchestration definition
 ├── .env.example                    # Environment variable template
 ├── .gitignore                      # Git exclusion rules
-├── DEBUG_LOG.md                    # Permanent sequential issue and resolution register
 └── README.md                       # System documentation
 ```
 
@@ -303,8 +302,8 @@ rm -rf frontend/.next
 | Key | Action |
 | :--- | :--- |
 | `Space` | Play / Pause Replay |
-| `Arrow Left` | Step backward 10 seconds |
-| `Arrow Right` | Step forward 10 seconds |
+| `Arrow Left` | Step backward 5 seconds |
+| `Arrow Right` | Step forward 5 seconds |
 | `Arrow Up` | Increase playback speed (up to 16x) |
 | `Arrow Down` | Decrease playback speed (down to 0.5x) |
 

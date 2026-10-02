@@ -130,14 +130,14 @@ export function usePlayback({ payload, initialDriver = "VER" }: UsePlaybackOptio
   }, [duration, seekTo]);
 
   const stepForward = useCallback(
-    (seconds: number = 10) => {
+    (seconds: number = 5) => {
       seekTo(currentTimeRef.current + seconds);
     },
     [seekTo]
   );
 
   const stepBackward = useCallback(
-    (seconds: number = 10) => {
+    (seconds: number = 5) => {
       seekTo(currentTimeRef.current - seconds);
     },
     [seekTo]

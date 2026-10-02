@@ -105,8 +105,8 @@ export function PlaybackControls({
           </button>
 
           <button
-            onClick={() => onStepBackward(10)}
-            title="Jump -10 seconds"
+            onClick={() => onStepBackward(5)}
+            title="Jump -5 seconds"
             className="p-2 rounded-lg glass-btn text-slate-300 hover:text-white"
           >
             <Rewind className="w-4 h-4" />
@@ -121,8 +121,8 @@ export function PlaybackControls({
           </button>
 
           <button
-            onClick={() => onStepForward(10)}
-            title="Jump +10 seconds"
+            onClick={() => onStepForward(5)}
+            title="Jump +5 seconds"
             className="p-2 rounded-lg glass-btn text-slate-300 hover:text-white"
           >
             <FastForward className="w-4 h-4" />
