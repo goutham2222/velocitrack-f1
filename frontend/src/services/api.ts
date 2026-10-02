@@ -20,7 +20,7 @@ export async function fetchAvailableYears(): Promise<number[]> {
     console.warn("Using fallback seasons:", err);
     const currentYear = new Date().getFullYear();
     const yrs: number[] = [];
-    for (let y = currentYear + 1; y >= 2018; y--) {
+    for (let y = currentYear; y >= 2018; y--) {
       yrs.push(y);
     }
     return yrs;
@@ -81,4 +81,19 @@ export async function fetchSessionReplay(
   if (!res.ok) throw new Error("Failed to fetch session replay");
   return await res.json();
 }
+
+export async function checkServerBootId(): Promise<string | null> {
+  try {
+    const res = await fetch(`${API_BASE}/health`, {
+      signal: typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined,
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.boot_id ? String(data.boot_id) : null;
+  } catch {
+    return null;
+  }
+}
+
+
 

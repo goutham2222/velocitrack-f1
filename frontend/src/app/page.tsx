@@ -7,7 +7,7 @@ import {
   ViewportMode,
   SpeedUnit,
 } from "@/types/telemetry";
-import { fetchDemoReplay, fetchSessionReplay } from "@/services/api";
+import { fetchDemoReplay, fetchSessionReplay, checkServerBootId } from "@/services/api";
 import { usePlayback } from "@/hooks/usePlayback";
 import { ViewportContainer } from "@/components/viewport/ViewportContainer";
 import { Leaderboard } from "@/components/hud/Leaderboard";
@@ -105,7 +105,7 @@ export default function ReplayDashboard() {
       };
     }
     return {
-      year: payload.metadata.year || currentYear,
+      year: Math.min(payload.metadata.year || currentYear, currentYear),
       eventName: payload.metadata.event_name,
       sessionCode: payload.metadata.session_name === "Race" ? "R" : (payload.metadata.session_name || "R"),
       lapStart: payload.metadata.lap_start || 1,
@@ -117,45 +117,83 @@ export default function ReplayDashboard() {
   // Load saved session or demo on initial mount for instant zero-wait startup
   useEffect(() => {
     setIsLoading(true);
-    let saved: any = null;
+
+    const currentBuildId = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
+    let savedBuildId = "";
     try {
-      const raw = localStorage.getItem("velocitrack_active_session");
-      if (raw) saved = JSON.parse(raw);
+      savedBuildId = localStorage.getItem("velocitrack_build_id") || "";
     } catch {}
 
-    if (saved && saved.year && saved.eventName) {
-      setHasCustomSession(true);
-      fetchSessionReplay(
-        saved.year,
-        saved.eventName,
-        saved.sessionCode || "R",
-        saved.lapStart || 1,
-        saved.lapEnd || 3,
-        10
-      )
-        .then((data) => {
-          setPayload(data);
-          setIsLoading(false);
-        })
-        .catch(() => {
-          fetchDemoReplay(10, 2)
-            .then((data) => {
-              setPayload(data);
-              setIsLoading(false);
-            })
-            .catch(() => setIsLoading(false));
-        });
-    } else {
-      fetchDemoReplay(10, 2)
-        .then((data) => {
-          setPayload(data);
-          setIsLoading(false);
-        })
-        .catch((err) => {
-          console.error("Failed to load initial demo replay:", err);
-          setIsLoading(false);
-        });
+    // Check if client bundle build ID changed or was uninitialized (e.g. fresh Docker container build)
+    const isNewBuild = savedBuildId !== currentBuildId;
+
+    if (isNewBuild) {
+      try {
+        localStorage.removeItem("velocitrack_active_session");
+      } catch {}
     }
+    try {
+      localStorage.setItem("velocitrack_build_id", currentBuildId);
+    } catch {}
+
+    // Also check server boot ID to detect container rebuild/restart on the backend
+    checkServerBootId().then((serverBootId) => {
+      let isNewBackendBoot = false;
+      if (serverBootId) {
+        try {
+          const savedBootId = localStorage.getItem("velocitrack_backend_boot_id") || "";
+          if (savedBootId && savedBootId !== serverBootId) {
+            isNewBackendBoot = true;
+            localStorage.removeItem("velocitrack_active_session");
+          }
+          localStorage.setItem("velocitrack_backend_boot_id", serverBootId);
+        } catch {}
+      }
+
+      let saved: any = null;
+      if (!isNewBuild && !isNewBackendBoot) {
+        try {
+          const raw = localStorage.getItem("velocitrack_active_session");
+          if (raw) saved = JSON.parse(raw);
+        } catch {}
+      }
+
+      const currentYear = new Date().getFullYear();
+      if (saved && saved.year && saved.eventName) {
+        setHasCustomSession(true);
+        const sanitizedYear = Math.min(Number(saved.year), currentYear);
+        fetchSessionReplay(
+          sanitizedYear,
+          saved.eventName,
+          saved.sessionCode || "R",
+          saved.lapStart || 1,
+          saved.lapEnd || 3,
+          10
+        )
+          .then((data) => {
+            setPayload(data);
+            setIsLoading(false);
+          })
+          .catch(() => {
+            fetchDemoReplay(10, 2)
+              .then((data) => {
+                setPayload(data);
+                setIsLoading(false);
+              })
+              .catch(() => setIsLoading(false));
+          });
+      } else {
+        fetchDemoReplay(10, 2)
+          .then((data) => {
+            setPayload(data);
+            setIsLoading(false);
+          })
+          .catch((err) => {
+            console.error("Failed to load initial demo replay:", err);
+            setIsLoading(false);
+          });
+      }
+    });
   }, []);
 
   const handleResetCamera = useCallback(() => {
@@ -292,6 +330,10 @@ export default function ReplayDashboard() {
                 lapStart,
                 lapEnd,
               })
+            );
+            localStorage.setItem(
+              "velocitrack_build_id",
+              process.env.NEXT_PUBLIC_BUILD_ID || "dev"
             );
           } catch {}
           handleClosePicker();

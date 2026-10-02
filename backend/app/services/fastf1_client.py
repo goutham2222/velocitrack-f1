@@ -51,9 +51,9 @@ FALLBACK_POPULAR_EVENTS = [
 
 
 def get_available_years() -> List[int]:
-    """Returns available F1 seasons (2018 through next calendar year, descending)."""
+    """Returns available F1 seasons (2018 through current calendar year, descending)."""
     current_year = datetime.now(timezone.utc).year
-    return list(range(current_year + 1, 2017, -1))
+    return list(range(current_year, 2017, -1))
 
 
 def is_event_completed(row, now_utc: datetime) -> bool:

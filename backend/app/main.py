@@ -1,4 +1,5 @@
 import logging
+import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
@@ -42,9 +43,12 @@ def root():
     }
 
 
+SERVER_BOOT_ID = str(int(time.time()))
+
+
 @app.get("/health")
 def health():
-    return {"status": "healthy"}
+    return {"status": "healthy", "boot_id": SERVER_BOOT_ID}
 
 
 if __name__ == "__main__":

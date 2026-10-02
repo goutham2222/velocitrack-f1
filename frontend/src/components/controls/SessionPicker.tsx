@@ -82,12 +82,15 @@ export function SessionPicker({
   const currentYear = new Date().getFullYear();
   const [years, setYears] = useState<number[]>(() => {
     const list: number[] = [];
-    for (let y = currentYear + 1; y >= 2018; y--) {
+    for (let y = currentYear; y >= 2018; y--) {
       list.push(y);
     }
     return list;
   });
-  const [selectedYear, setSelectedYear] = useState<number>(currentSession?.year ?? currentYear);
+  const [selectedYear, setSelectedYear] = useState<number>(() => {
+    const y = currentSession?.year ?? currentYear;
+    return Math.min(y, currentYear);
+  });
 
   const [events, setEvents] = useState<EventInfo[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<string>(
@@ -110,14 +113,14 @@ export function SessionPicker({
   // Synchronize state when active currentSession updates
   useEffect(() => {
     if (currentSession) {
-      if (currentSession.year) setSelectedYear(currentSession.year);
+      if (currentSession.year) setSelectedYear(Math.min(currentSession.year, currentYear));
       if (currentSession.eventName) setSelectedEvent(currentSession.eventName);
       if (currentSession.sessionCode) setSelectedSession(currentSession.sessionCode);
       if (currentSession.lapStart) setLapStart(currentSession.lapStart);
       if (currentSession.lapEnd) setLapEnd(currentSession.lapEnd);
       if (currentSession.totalLaps) setMaxLaps(currentSession.totalLaps);
     }
-  }, [currentSession]);
+  }, [currentSession, currentYear]);
 
   // Fetch years on mount
   useEffect(() => {
