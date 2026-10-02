@@ -123,8 +123,10 @@ velocitrack-f1/
 │   │   ├── config.py               # Environment configuration, cache paths, and CORS settings
 │   │   └── main.py                 # FastAPI application factory, CORS middleware, and health endpoints
 │   ├── requirements.txt            # Python dependencies (fastf1, fastapi, numpy, pandas, uvicorn)
+│   ├── .dockerignore               # Build context exclusions (virtual environment, cache)
 │   └── Dockerfile                  # Container definition for backend service
 ├── frontend/
+│   ├── public/                     # Static web assets directory
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── layout.tsx          # Root HTML layout and font loading
@@ -151,6 +153,7 @@ velocitrack-f1/
 │   │   │   └── api.ts              # Type-safe Fetch API client for backend communication
 │   │   └── types/
 │   │       └── telemetry.ts        # TypeScript data contracts matching backend Pydantic models
+│   ├── .dockerignore               # Build context exclusions (node_modules, .next)
 │   ├── next.config.mjs             # Next.js config with dynamic millisecond build ID injection
 │   ├── package.json                # Dependencies (@react-three/fiber, three, tailwindcss, lucide-react)
 │   ├── tailwind.config.ts          # Tailwind styling configuration
@@ -193,7 +196,16 @@ cp .env.example .env
 
 #### 3. Build and launch containers
 ```bash
+# Run in foreground with live container logs
 docker compose up --build
+
+# Or run in detached background mode
+docker compose up --build -d
+```
+
+To monitor service logs when running detached:
+```bash
+docker compose logs -f
 ```
 
 #### 4. Access the application
