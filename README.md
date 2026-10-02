@@ -213,6 +213,8 @@ docker compose logs -f
 - **Backend API Docs (Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Backend Health Check:** [http://localhost:8000/health](http://localhost:8000/health)
 
+> **Tip for Local IDE / Editor Type-Checking:** When running with Docker, dependencies are contained inside the container. If you are browsing or editing code on your host machine in VS Code or Cursor, run `cd frontend && npm install` once locally so your editor's TypeScript language server can resolve type definitions and avoid false diagnostics.
+
 #### 5. Stopping the containers
 ```bash
 # Gracefully stop containers
