@@ -11,6 +11,28 @@
 
 ---
 
+## Preview Gallery
+
+### 🏁 Full-Circuit 3D Replay & Live Telemetry HUD
+Live 3D extruded circuit ribbon, driver pods, real-time timing tower with monotonic gaps, and cockpit telemetry panel:
+<p align="center">
+  <img src="docs/assets/01_main_3d_replay.png" alt="VelociTrack F1 — 3D Circuit Replay & Broadcast HUD" width="100%" />
+</p>
+
+### 🏎️ Cinematic Chase Cam & Tactical 2D Radar
+| 🏎️ Cinematic Chase Cam | 🗺️ Tactical 2D Radar |
+| :---: | :---: |
+| <img src="docs/assets/02_cinematic_chase_cam.png" alt="Cinematic Chase Cam" width="100%" /> | <img src="docs/assets/03_tactical_2d_radar.png" alt="Tactical 2D Canvas Radar" width="100%" /> |
+| *Dynamic driver-following chase cam with smooth spherical damping* | *High-performance 2D radar view with driver blips and pan/zoom* |
+
+### 🌦️ Race Control / Weather & Dynamic Session Picker
+| 🌦️ Race Control & Ambient Weather | 📅 Cascading Session Picker |
+| :---: | :---: |
+| <img src="docs/assets/04_race_control_weather.png" alt="Race Control & Weather" width="100%" /> | <img src="docs/assets/05_session_picker_modal.png" alt="Cascading Session Picker Modal" width="100%" /> |
+| *Real-time FIA flag status banner and ambient weather telemetry* | *Multi-season calendar (2018–present) with fuzzy Grand Prix matching* |
+
+---
+
 ## Key Features
 
 - **High-Precision Telemetry Pipeline:**
@@ -160,6 +182,12 @@ velocitrack-f1/
 │   ├── tsconfig.json               # TypeScript strict compiler configuration
 │   └── Dockerfile                  # Multi-stage container build for frontend
 ├── docker-compose.yml              # Local multi-container orchestration definition
+├── docs/
+│   ├── assets/                     # Replay engine screenshots & UI preview captures
+│   ├── Doc_1_System_Architecture_and_Data_Pipelines.md
+│   ├── Doc_2_Codebase_Reference_and_Component_Catalog.md
+│   ├── Doc_3_Algorithms_State_Management_and_Math.md
+│   └── Doc_4_Testing_Failure_Modes_and_Troubleshooting.md
 ├── .env.example                    # Environment variable template
 ├── .gitignore                      # Git exclusion rules
 └── README.md                       # System documentation
