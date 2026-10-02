@@ -20,7 +20,7 @@ export async function fetchAvailableYears(): Promise<number[]> {
     console.warn("Using fallback seasons:", err);
     const currentYear = new Date().getFullYear();
     const yrs: number[] = [];
-    for (let y = currentYear; y >= 2018; y--) {
+    for (let y = currentYear + 1; y >= 2018; y--) {
       yrs.push(y);
     }
     return yrs;

@@ -1,7 +1,7 @@
 import math
 from datetime import datetime, timezone
 import numpy as np
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from app.models.schemas import (
     CircuitGeometry,
     SectorBoundary,
@@ -181,12 +181,25 @@ def generate_monaco_circuit() -> Tuple[CircuitGeometry, np.ndarray, np.ndarray, 
     return geometry, dense_points, cum_dist, total_length
 
 
-def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
+def get_demo_replay(
+    sampling_rate: int = 10,
+    laps: int = 2,
+    year: Optional[int] = None,
+    event_name: Optional[str] = None,
+    circuit_name: Optional[str] = None,
+) -> ReplayPayload:
     """
-    Generates a high-precision multi-car synchronized replay payload for Monaco GP.
-    Provides 20 official drivers with realistic braking, throttle, speed, and gap deltas.
+    Generates a high-precision multi-car synchronized replay payload.
+    Provides 22 official drivers with realistic braking, throttle, speed, and gap deltas.
     """
     circuit, dense_pts, cum_dist, track_length = generate_monaco_circuit()
+
+    replay_year = year or datetime.now(timezone.utc).year
+    replay_event = event_name or "Monaco Grand Prix"
+    replay_circuit = circuit_name or (
+        "Circuit de Monaco" if "monaco" in replay_event.lower() else f"{replay_event} Circuit"
+    )
+    circuit.circuit_name = replay_circuit
 
     # Lap time ~74 seconds (1:14.000 for leader)
     base_lap_time = 74.0
@@ -457,10 +470,10 @@ def get_demo_replay(sampling_rate: int = 10, laps: int = 2) -> ReplayPayload:
     ]
 
     metadata = ReplayMetadata(
-        year=datetime.now(timezone.utc).year,
-        event_name="Monaco Grand Prix",
+        year=replay_year,
+        event_name=replay_event,
         session_name="Race",
-        circuit_name="Circuit de Monaco",
+        circuit_name=replay_circuit,
         total_frames=total_frames,
         time_step=dt,
         duration_seconds=round(total_time, 2),

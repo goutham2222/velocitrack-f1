@@ -33,6 +33,7 @@ export default function ReplayDashboard() {
   const [payload, setPayload] = useState<ReplayPayload | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isPickerOpen, setIsPickerOpen] = useState<boolean>(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
   const [hasCustomSession, setHasCustomSession] = useState<boolean>(false);
   const [resetTrigger, setResetTrigger] = useState<number>(0);
   const wasPlayingRef = useRef<boolean>(false);
@@ -113,18 +114,48 @@ export default function ReplayDashboard() {
     };
   }, [payload?.metadata]);
 
-  // Load demo on initial mount for instant zero-wait startup
+  // Load saved session or demo on initial mount for instant zero-wait startup
   useEffect(() => {
     setIsLoading(true);
-    fetchDemoReplay(10, 2)
-      .then((data) => {
-        setPayload(data);
-        setIsLoading(false);
-      })
-      .catch((err) => {
-        console.error("Failed to load initial demo replay:", err);
-        setIsLoading(false);
-      });
+    let saved: any = null;
+    try {
+      const raw = localStorage.getItem("velocitrack_active_session");
+      if (raw) saved = JSON.parse(raw);
+    } catch {}
+
+    if (saved && saved.year && saved.eventName) {
+      setHasCustomSession(true);
+      fetchSessionReplay(
+        saved.year,
+        saved.eventName,
+        saved.sessionCode || "R",
+        saved.lapStart || 1,
+        saved.lapEnd || 3,
+        10
+      )
+        .then((data) => {
+          setPayload(data);
+          setIsLoading(false);
+        })
+        .catch(() => {
+          fetchDemoReplay(10, 2)
+            .then((data) => {
+              setPayload(data);
+              setIsLoading(false);
+            })
+            .catch(() => setIsLoading(false));
+        });
+    } else {
+      fetchDemoReplay(10, 2)
+        .then((data) => {
+          setPayload(data);
+          setIsLoading(false);
+        })
+        .catch((err) => {
+          console.error("Failed to load initial demo replay:", err);
+          setIsLoading(false);
+        });
+    }
   }, []);
 
   const handleResetCamera = useCallback(() => {
@@ -159,12 +190,14 @@ export default function ReplayDashboard() {
   );
 
   const handleOpenPicker = useCallback(() => {
+    setPickerError(null);
     wasPlayingRef.current = playback.isPlaying;
     playback.pause();
     setIsPickerOpen(true);
   }, [playback]);
 
   const handleClosePicker = useCallback(() => {
+    setPickerError(null);
     setIsPickerOpen(false);
     if (wasPlayingRef.current) {
       playback.play();
@@ -193,6 +226,7 @@ export default function ReplayDashboard() {
   ]);
 
   const handleLoadDemo = useCallback(() => {
+    setPickerError(null);
     playback.setSelectedDriverCode(null);
     setCameraMode("orbit");
     setResetTrigger((prev) => prev + 1);
@@ -208,11 +242,16 @@ export default function ReplayDashboard() {
         playback.setSelectedDriverCode(null);
         setCameraMode("orbit");
         setResetTrigger((prev) => prev + 1);
+        setPickerError(null);
         setIsLoading(false);
+        try {
+          localStorage.removeItem("velocitrack_active_session");
+        } catch {}
         handleClosePicker();
       })
       .catch((err) => {
         console.error("Failed to reload demo:", err);
+        setPickerError("Failed to reload demo replay. Please try again.");
         setIsLoading(false);
       });
   }, [playback, handleClosePicker]);
@@ -225,6 +264,7 @@ export default function ReplayDashboard() {
       lapStart: number,
       lapEnd: number
     ) => {
+      setPickerError(null);
       playback.setSelectedDriverCode(null);
       setCameraMode("orbit");
       setResetTrigger((prev) => prev + 1);
@@ -240,11 +280,27 @@ export default function ReplayDashboard() {
           playback.setSelectedDriverCode(null);
           setCameraMode("orbit");
           setResetTrigger((prev) => prev + 1);
+          setPickerError(null);
           setIsLoading(false);
+          try {
+            localStorage.setItem(
+              "velocitrack_active_session",
+              JSON.stringify({
+                year,
+                eventName: event,
+                sessionCode: session,
+                lapStart,
+                lapEnd,
+              })
+            );
+          } catch {}
           handleClosePicker();
         })
         .catch((err) => {
           console.error("Failed to fetch session replay:", err);
+          setPickerError(
+            "Unable to load session telemetry. Please verify network connectivity or select another Grand Prix."
+          );
           setIsLoading(false);
         });
     },
@@ -540,6 +596,8 @@ export default function ReplayDashboard() {
               onLoadSession={handleLoadSession}
               onLoadDemo={handleLoadDemo}
               isLoading={isLoading}
+              errorMessage={pickerError}
+              onClearError={() => setPickerError(null)}
             />
           </div>
         </div>

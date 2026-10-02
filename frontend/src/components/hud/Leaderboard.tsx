@@ -115,14 +115,14 @@ export function Leaderboard({
                     {entry.isDrsOpen && !entry.inPit && !entry.hasFinished && !entry.isDnf ? (
                       <span
                         title="DRS Active (Flap Open)"
-                        className="px-1.5 py-0.2 rounded bg-[#10B981] text-black text-[9px] font-mono font-black border border-[#10B981]"
+                        className="px-1.5 py-[1px] rounded bg-[#10B981] text-black text-[9px] font-mono font-black border border-[#10B981]"
                       >
                         DRS
                       </span>
                     ) : entry.drsThreat && entry.position > 1 && !entry.inPit && !entry.hasFinished && !entry.isDnf ? (
                       <span
                         title="DRS Inactive (Within 1.0s Detection)"
-                        className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 text-[9px] font-mono font-bold border border-slate-700"
+                        className="px-1.5 py-[1px] rounded bg-slate-800 text-slate-400 text-[9px] font-mono font-bold border border-slate-700"
                       >
                         DRS
                       </span>

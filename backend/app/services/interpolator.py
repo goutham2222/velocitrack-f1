@@ -84,6 +84,31 @@ def get_deterministic_team_color(name: str) -> str:
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
+def extract_session_year(session) -> int:
+    """
+    Robustly extracts the authentic championship season year from a FastF1 session.
+    Inspects session.event.year, session.date.year, and session.event['EventDate'].year
+    before falling back to the current UTC calendar year.
+    """
+    if hasattr(session, "event") and hasattr(session.event, "year") and session.event.year:
+        try:
+            return int(session.event.year)
+        except (ValueError, TypeError):
+            pass
+    if hasattr(session, "date") and hasattr(session.date, "year") and session.date.year:
+        try:
+            return int(session.date.year)
+        except (ValueError, TypeError):
+            pass
+    if hasattr(session, "event") and hasattr(session.event, "get"):
+        ed = session.event.get("EventDate")
+        if ed is not None and hasattr(ed, "year") and ed.year:
+            try:
+                return int(ed.year)
+            except (ValueError, TypeError):
+                pass
+    return datetime.now(timezone.utc).year
+
 
 def generate_pit_lane(
     centerline: List[List[float]],
@@ -416,7 +441,13 @@ def build_replay_payload_from_session(
 
     if laps_df is None or laps_df.empty:
         logger.warning("Session has no laps data, falling back to demo replay")
-        return get_demo_replay(sampling_rate=sampling_rate, laps=lap_end - lap_start + 1)
+        ev_name = str(session.event.get("EventName", "Grand Prix")) if hasattr(session, "event") and hasattr(session.event, "get") else None
+        return get_demo_replay(
+            sampling_rate=sampling_rate,
+            laps=lap_end - lap_start + 1,
+            year=extract_session_year(session),
+            event_name=ev_name,
+        )
 
     # 1. Determine Session Time Window for Requested Laps
     target_laps = laps_df[
@@ -971,7 +1002,13 @@ def build_replay_payload_from_session(
 
     # Fallback to demo if drivers list is empty
     if not drivers_dict or circuit_geometry is None:
-        return get_demo_replay(sampling_rate=sampling_rate, laps=lap_end - lap_start + 1)
+        ev_name = str(session.event.get("EventName", "Grand Prix")) if hasattr(session, "event") and hasattr(session.event, "get") else None
+        return get_demo_replay(
+            sampling_rate=sampling_rate,
+            laps=lap_end - lap_start + 1,
+            year=extract_session_year(session),
+            event_name=ev_name,
+        )
 
     # 4. Weather extraction
     weather_samples = [
@@ -1042,7 +1079,7 @@ def build_replay_payload_from_session(
     actual_lap_end = int(target_laps["LapNumber"].dropna().max()) if not target_laps.empty else lap_end
 
     metadata = ReplayMetadata(
-        year=int(session.event.get("Year", datetime.now(timezone.utc).year)),
+        year=extract_session_year(session),
         event_name=str(session.event.get("EventName", "Grand Prix")),
         session_name=str(session.name),
         circuit_name=circuit_geometry.circuit_name,

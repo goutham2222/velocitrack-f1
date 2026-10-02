@@ -14,6 +14,7 @@ import {
   Sparkles,
   RefreshCw,
   SlidersHorizontal,
+  AlertCircle,
 } from "lucide-react";
 
 export interface ActiveSessionContext {
@@ -36,6 +37,38 @@ interface SessionPickerProps {
   ) => void;
   onLoadDemo: () => void;
   isLoading: boolean;
+  errorMessage?: string | null;
+  onClearError?: () => void;
+}
+
+function findBestEventMatch(targetName: string, events: EventInfo[]): EventInfo | null {
+  if (!targetName || events.length === 0) return null;
+  const cleanTarget = targetName.toLowerCase().replace(/grand prix|\d{4}|formula 1|f1/g, "").trim();
+
+  // 1. Exact match
+  const exact = events.find((e) => e.event_name.toLowerCase() === targetName.toLowerCase());
+  if (exact) return exact;
+
+  // 2. Core keyword containment (e.g. "british", "silverstone", "monza", "belgian", "spa", "monaco", "bahrain")
+  if (cleanTarget.length >= 3) {
+    const contained = events.find((e) => {
+      const eClean = e.event_name.toLowerCase().replace(/grand prix|\d{4}|formula 1|f1/g, "").trim();
+      return (
+        eClean.includes(cleanTarget) ||
+        cleanTarget.includes(eClean) ||
+        e.location.toLowerCase().includes(cleanTarget) ||
+        e.country.toLowerCase().includes(cleanTarget)
+      );
+    });
+    if (contained) return contained;
+  }
+
+  // 3. Substring match
+  const sub = events.find((e) =>
+    e.event_name.toLowerCase().includes(targetName.toLowerCase()) ||
+    targetName.toLowerCase().includes(e.event_name.toLowerCase())
+  );
+  return sub || null;
 }
 
 export function SessionPicker({
@@ -43,11 +76,13 @@ export function SessionPicker({
   onLoadSession,
   onLoadDemo,
   isLoading,
+  errorMessage,
+  onClearError,
 }: SessionPickerProps) {
   const currentYear = new Date().getFullYear();
   const [years, setYears] = useState<number[]>(() => {
     const list: number[] = [];
-    for (let y = currentYear; y >= 2018; y--) {
+    for (let y = currentYear + 1; y >= 2018; y--) {
       list.push(y);
     }
     return list;
@@ -93,42 +128,22 @@ export function SessionPicker({
     });
   }, []);
 
-  // Fetch events when year changes
+  // Fetch events when year changes - persists user's selected event across seasons
   useEffect(() => {
     fetchEvents(selectedYear).then((evList) => {
       if (evList.length > 0) {
         setEvents(evList);
-        // If the active currentSession matches this year, keep currentSession.eventName if completed
-        const activeMatch =
-          currentSession && currentSession.year === selectedYear
-            ? evList.find(
-                (e) =>
-                  e.is_completed !== false &&
-                  (e.event_name.toLowerCase() === currentSession.eventName.toLowerCase() ||
-                    e.event_name.toLowerCase().includes(currentSession.eventName.toLowerCase()) ||
-                    currentSession.eventName.toLowerCase().includes(e.event_name.toLowerCase()))
-              )
-            : null;
-
-        if (activeMatch) {
-          setSelectedEvent(activeMatch.event_name);
+        const targetName = selectedEvent || currentSession?.eventName || "Monaco Grand Prix";
+        const matched = findBestEventMatch(targetName, evList);
+        if (matched) {
+          setSelectedEvent(matched.event_name);
         } else {
-          // If selectedEvent is valid and completed for this year, retain it
-          const currentMatch = evList.find(
-            (e) => e.event_name === selectedEvent && e.is_completed !== false
-          );
-          if (currentMatch) {
-            setSelectedEvent(currentMatch.event_name);
-          } else {
-            const completed = evList.filter((e) => e.is_completed !== false);
-            const pool = completed.length > 0 ? completed : evList;
-            const monaco = pool.find((e) => e.event_name.includes("Monaco"));
-            setSelectedEvent(monaco ? monaco.event_name : pool[0].event_name);
-          }
+          const monaco = evList.find((e) => e.event_name.includes("Monaco"));
+          setSelectedEvent(monaco ? monaco.event_name : evList[0].event_name);
         }
       }
     });
-  }, [selectedYear, currentSession]);
+  }, [selectedYear]);
 
   // Fetch sessions when event changes
   useEffect(() => {
@@ -158,7 +173,6 @@ export function SessionPicker({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSelectedEventUpcoming) return;
     onLoadSession(selectedYear, selectedEvent, selectedSession, lapStart, lapEnd);
   };
 
@@ -193,7 +207,10 @@ export function SessionPicker({
             </label>
             <select
               value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              onChange={(e) => {
+                onClearError?.();
+                setSelectedYear(parseInt(e.target.value));
+              }}
               disabled={isLoading}
               className="bg-titanium-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-red-500"
             >
@@ -219,7 +236,10 @@ export function SessionPicker({
             </div>
             <select
               value={selectedEvent}
-              onChange={(e) => setSelectedEvent(e.target.value)}
+              onChange={(e) => {
+                onClearError?.();
+                setSelectedEvent(e.target.value);
+              }}
               disabled={isLoading}
               className="bg-titanium-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-red-500 truncate"
             >
@@ -250,7 +270,10 @@ export function SessionPicker({
             </label>
             <select
               value={selectedSession}
-              onChange={(e) => setSelectedSession(e.target.value)}
+              onChange={(e) => {
+                onClearError?.();
+                setSelectedSession(e.target.value);
+              }}
               disabled={isLoading}
               className="bg-titanium-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-red-500"
             >
@@ -273,7 +296,10 @@ export function SessionPicker({
                 min={1}
                 max={lapEnd}
                 value={lapStart}
-                onChange={(e) => setLapStart(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) => {
+                  onClearError?.();
+                  setLapStart(Math.max(1, parseInt(e.target.value) || 1));
+                }}
                 disabled={isLoading}
                 className="w-14 bg-titanium-900/80 border border-white/10 rounded-lg px-2 py-1.5 text-xs font-mono text-center text-white focus:outline-none focus:border-red-500"
               />
@@ -283,7 +309,10 @@ export function SessionPicker({
                 min={lapStart}
                 max={maxLaps}
                 value={lapEnd}
-                onChange={(e) => setLapEnd(Math.max(lapStart, parseInt(e.target.value) || lapStart))}
+                onChange={(e) => {
+                  onClearError?.();
+                  setLapEnd(Math.max(lapStart, parseInt(e.target.value) || lapStart));
+                }}
                 disabled={isLoading}
                 className="w-14 bg-titanium-900/80 border border-white/10 rounded-lg px-2 py-1.5 text-xs font-mono text-center text-white focus:outline-none focus:border-red-500"
               />
@@ -291,10 +320,18 @@ export function SessionPicker({
           </div>
         </div>
 
+        {/* Error Feedback Banner */}
+        {errorMessage && (
+          <div className="flex items-center gap-2 p-2.5 rounded-xl bg-red-500/15 border border-red-500/40 text-red-300 text-xs font-mono animate-in fade-in duration-150">
+            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+            <span className="flex-1 leading-tight">{errorMessage}</span>
+          </div>
+        )}
+
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={isLoading || isSelectedEventUpcoming}
+          disabled={isLoading}
           className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-xs font-mono font-bold tracking-wider uppercase transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? (
@@ -303,7 +340,7 @@ export function SessionPicker({
               <span>ALIGNING MULTI-CAR TELEMETRY...</span>
             </>
           ) : isSelectedEventUpcoming ? (
-            <span>ROUND UPCOMING — REPLAY UNAVAILABLE</span>
+            <span>LOAD RACE PREVIEW (SIMULATION)</span>
           ) : (
             <span>LOAD RACE REPLAY</span>
           )}

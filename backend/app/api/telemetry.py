@@ -49,9 +49,12 @@ def get_session_replay(
             None,
         )
         if ev_match and not ev_match.is_completed:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Replay telemetry unavailable: '{event}' ({year}) has not taken place yet.",
+            logger.info(f"Event '{event}' ({year}) has not taken place yet. Returning simulated preview replay.")
+            return demo_data.get_demo_replay(
+                sampling_rate=sampling_rate,
+                laps=max(1, lap_end - lap_start + 1),
+                year=year,
+                event_name=event,
             )
     except HTTPException:
         raise
@@ -68,7 +71,12 @@ def get_session_replay(
         )
     except Exception as e:
         logger.warning(f"FastF1 session load failed for {year} {event} {session}: {e}. Returning demo simulation.")
-        return demo_data.get_demo_replay(sampling_rate=sampling_rate, laps=max(1, lap_end - lap_start + 1))
+        return demo_data.get_demo_replay(
+            sampling_rate=sampling_rate,
+            laps=max(1, lap_end - lap_start + 1),
+            year=year,
+            event_name=event,
+        )
 
 
 @router.get("/stream")
