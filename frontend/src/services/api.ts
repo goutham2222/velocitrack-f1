@@ -4,7 +4,26 @@ import {
   ReplayPayload,
 } from "@/types/telemetry";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export function getApiBase(): string {
+  // 1. Explicit build-time or runtime override takes priority
+  if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim() !== "") {
+    return process.env.NEXT_PUBLIC_API_URL.trim();
+  }
+  // 2. Client-side browser execution
+  if (typeof window !== "undefined") {
+    // If running in local standalone development on port 3000, point directly to FastAPI on 8000
+    if (window.location.hostname === "localhost" && window.location.port === "3000") {
+      return "http://localhost:8000";
+    }
+    // In production (AWS ALB, containerized ingress, custom domain), use relative path ("")
+    // so all /api/* requests route through the unified load balancer without CORS or host mismatch
+    return "";
+  }
+  // 3. Server-side rendering (SSR) fallback
+  return "http://localhost:8000";
+}
+
+const API_BASE = getApiBase();
 
 export async function fetchAvailableYears(): Promise<number[]> {
   try {

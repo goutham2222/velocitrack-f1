@@ -294,6 +294,94 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 
 ---
 
+### Method 3: Production Cloud Deployment on AWS (ECS Fargate + Terraform + GitHub Actions)
+
+VelociTrack F1 includes a production-grade cloud deployment architecture provisioned via **Terraform (IaC)**, scheduled on **AWS ECS Fargate** (serverless container orchestration), and continuously deployed using **GitHub Actions CI/CD**.
+
+#### 1. Cloud Architecture Overview
+
+```mermaid
+flowchart TD
+    CLIENT["Browser Client / User"] -->|HTTP Port 80| ALB["AWS Application Load Balancer"]
+    
+    subgraph VPC ["AWS VPC (10.0.0.0/16)"]
+        subgraph SUBNETS ["Public Subnets (us-east-1a, us-east-1b)"]
+            ALB -->|/api/* & /health (Port 8000)| TG_BACKEND["Target Group: Backend"]
+            ALB -->|/* Default (Port 3000)| TG_FRONTEND["Target Group: Frontend"]
+            
+            subgraph ECS ["AWS ECS Fargate Cluster"]
+                TASK["Task: velocitrack-f1-task\n(1 vCPU / 2GB RAM)"]
+                TG_BACKEND -->|Proxy Port 8000| TASK
+                TG_FRONTEND -->|Proxy Port 3000| TASK
+                
+                subgraph CONTAINERS ["Dual-Container awsvpc Task"]
+                    BACKEND_C["FastAPI Backend Container\n(Python 3.11 / FastF1)"]
+                    FRONTEND_C["Next.js 15 Standalone Container\n(Node.js 20 / Three.js)"]
+                end
+            end
+        end
+    end
+    
+    ECR_B["Amazon ECR: Backend"] -.->|Image Pull| BACKEND_C
+    ECR_F["Amazon ECR: Frontend"] -.->|Image Pull| FRONTEND_C
+    TASK -.->|JSON Logs| CW["CloudWatch: /ecs/velocitrack-f1"]
+```
+
+#### 2. Key Architecture Benefits
+- **Serverless Compute:** ECS on AWS Fargate eliminates EC2 virtual machine maintenance, security patching, and idle capacity overhead.
+- **Unified ALB Ingress:** A single public Application Load Balancer routes traffic via path-based routing:
+  - `/api/*` and `/health` route directly to the FastAPI container (Port 8000).
+  - All other routes (`/*`) route to the Next.js standalone container (Port 3000).
+  - Eliminates Cross-Origin Resource Sharing (CORS) complexity and custom domain sprawl.
+- **Optimized Standalone Images:** Next.js uses `output: 'standalone'` reducing the production image from ~850MB to ~216MB.
+
+---
+
+#### 3. Automated CI/CD Pipeline (GitHub Actions)
+
+The repository includes fully automated GitHub Actions workflows located in `.github/workflows/`:
+
+| Workflow | Trigger | Description |
+| :--- | :--- | :--- |
+| **`deploy.yml`** | `push` to `main` / `deploy/aws-demo`, or manual trigger | Validates TypeScript & Python, provisions/verifies Terraform IaC, builds Docker images with layer caching, pushes to Amazon ECR, and executes a zero-downtime rolling update on ECS Fargate. |
+| **`teardown.yml`** | Manual `workflow_dispatch` only | Safely terminates all AWS cloud resources with `terraform destroy -auto-approve` to guarantee zero cost leakage. |
+
+##### Required GitHub Repository Secrets
+To enable automated deployments, navigate to **Settings > Secrets and variables > Actions** in your GitHub repository and configure:
+
+| Secret Name | Value | Required |
+| :--- | :--- | :--- |
+| `AWS_ACCESS_KEY_ID` | IAM User Access Key with ECS, ECR, ALB, and VPC permissions | **Yes** |
+| `AWS_SECRET_ACCESS_KEY` | IAM User Secret Access Key | **Yes** |
+| `AWS_REGION` | AWS Target Region (Default: `us-east-1`) | Optional |
+
+---
+
+#### 4. Zero-Cost Teardown & Resource Termination Protocol ⚠️
+
+To prevent recurring AWS billing when you are not actively using the application, use either of the following teardown methods to destroy all cloud infrastructure:
+
+##### Option A: One-Click Teardown via GitHub Actions (Recommended)
+1. Go to the **Actions** tab in your GitHub repository.
+2. Select **"VelociTrack F1 — Cloud Teardown & Resource Destruction"** from the left sidebar.
+3. Click **"Run workflow"**.
+4. In the confirmation box, type `DESTROY` and click **"Run workflow"**.
+5. The pipeline will gracefully drain ECS tasks and run `terraform destroy` to terminate all resources.
+
+##### Option B: Local CLI Teardown Script
+From your local terminal, run the automated teardown script:
+```bash
+bash infra/scripts/destroy.sh
+```
+This script runs `terraform destroy -auto-approve` inside `infra/terraform/`, cleanly wiping:
+- Application Load Balancers & Target Groups
+- ECS Clusters, Services & Task Definitions
+- Security Groups, Subnets, Route Tables & VPC
+- ECR Container Repositories
+- CloudWatch Log Groups
+
+---
+
 ### Useful Local Development Commands
 
 #### Verification & Health Checks

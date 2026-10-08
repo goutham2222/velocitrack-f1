@@ -1,0 +1,184 @@
+name: VelociTrack F1 — Production CI/CD Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - deploy/aws-demo
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - ".gitignore"
+  workflow_dispatch:
+    inputs:
+      force_terraform_apply:
+        description: "Re-run full Terraform apply before deploying containers"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deployment-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: 🔍 Lint, Validate & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend Strict Typecheck & Build Validation
+        working-directory: frontend
+        run: npm run build
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Backend Dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Backend Syntax & Schema Compilation
+        working-directory: backend
+        run: |
+          python -m py_compile app/main.py app/services/interpolator.py app/models/schemas.py app/services/fastf1_client.py
+
+  deploy-aws:
+    name: 🚀 Build, Push & Deploy to AWS ECS Fargate
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+          terraform_wrapper: false
+
+      - name: Initialize Terraform & Sync Infrastructure
+        working-directory: infra/terraform
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract ECR & Load Balancer Outputs
+        id: tf-outputs
+        working-directory: infra/terraform
+        run: |
+          echo "ecr_backend=$(terraform output -raw ecr_backend_url)" >> $GITHUB_OUTPUT
+          echo "ecr_frontend=$(terraform output -raw ecr_frontend_url)" >> $GITHUB_OUTPUT
+          echo "alb_dns=$(terraform output -raw alb_dns_name)" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Backend Container Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tf-outputs.outputs.ecr_backend }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and Push Frontend Container Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=
+          tags: ${{ steps.tf-outputs.outputs.ecr_frontend }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trigger Rolling ECS Service Deployment
+        run: |
+          echo "Triggering zero-downtime rolling update on ECS..."
+          aws ecs update-service \
+            --cluster velocitrack-f1-cluster \
+            --service velocitrack-f1-service \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for ECS Service Steady State
+        run: |
+          echo "Waiting for new containers to pass ALB health checks..."
+          aws ecs wait services-stable \
+            --cluster velocitrack-f1-cluster \
+            --services velocitrack-f1-service \
+            --region ${{ env.AWS_REGION }}
+          echo "✅ ECS service reached steady state!"
+
+      - name: Execute Live Smoke Verification
+        run: |
+          ALB_URL="http://${{ steps.tf-outputs.outputs.alb_dns }}"
+          echo "Verifying live ALB endpoints at $ALB_URL..."
+          
+          # Root endpoint check
+          ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$ALB_URL/")
+          echo "Root Endpoint HTTP Status: $ROOT_STATUS"
+          [ "$ROOT_STATUS" -eq 200 ] || exit 1
+
+          # Health probe check
+          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$ALB_URL/health")
+          echo "Health Endpoint HTTP Status: $HEALTH_STATUS"
+          [ "$HEALTH_STATUS" -eq 200 ] || exit 1
+
+          # Demo telemetry API check
+          API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$ALB_URL/api/telemetry/demo?sampling_rate=10&laps=2")
+          echo "Demo API HTTP Status: $API_STATUS"
+          [ "$API_STATUS" -eq 200 ] || exit 1
+
+          echo "🎉 All production smoke tests passed successfully!"
+
+      - name: Output Deployment Summary
+        run: |
+          echo "### 🏎️ VelociTrack F1 — Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **Live Application URL:** [http://${{ steps.tf-outputs.outputs.alb_dns }}](http://${{ steps.tf-outputs.outputs.alb_dns }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **FastAPI Health Probe:** [http://${{ steps.tf-outputs.outputs.alb_dns }}/health](http://${{ steps.tf-outputs.outputs.alb_dns }}/health)" >> $GITHUB_STEP_SUMMARY
+          echo "- **AWS Region:** \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compute Engine:** AWS ECS on AWS Fargate (Serverless \`linux/amd64\`)" >> $GITHUB_STEP_SUMMARY
+

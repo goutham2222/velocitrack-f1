@@ -1,0 +1,70 @@
+name: VelociTrack F1 — Cloud Teardown & Resource Destruction
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_destruction:
+        description: "Type 'DESTROY' to confirm complete termination of all AWS cloud resources"
+        required: true
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  teardown:
+    name: 🛑 Terminate All AWS Cloud Resources
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+    steps:
+      - name: Validate Destruction Confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_destruction }}" != "DESTROY" ]; then
+            echo "❌ Destruction aborted! You must explicitly type 'DESTROY' in the confirmation prompt."
+            exit 1
+          fi
+          echo "⚠️ Confirmed destruction: Proceeding with complete AWS resource teardown."
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+          terraform_wrapper: false
+
+      - name: Drain & Stop Active ECS Tasks
+        run: |
+          echo "Stopping running ECS Fargate tasks to accelerate ALB target draining..."
+          TASK_ARNS=$(aws ecs list-tasks --cluster velocitrack-f1-cluster --region ${{ env.AWS_REGION }} --query "taskArns[]" --output text || echo "")
+          for TASK in $TASK_ARNS; do
+            if [ "$TASK" != "" ] && [ "$TASK" != "None" ]; then
+              echo "Stopping task: $TASK"
+              aws ecs stop-task --cluster velocitrack-f1-cluster --task "$TASK" --reason "Automated CI/CD teardown" --region ${{ env.AWS_REGION }} || true
+            fi
+          done
+
+      - name: Execute Terraform Destroy
+        working-directory: infra/terraform
+        run: |
+          echo "Running terraform destroy to terminate all provisioned AWS resources..."
+          terraform init
+          terraform destroy -auto-approve
+
+      - name: Output Teardown Summary
+        run: |
+          echo "### 🏁 VelociTrack F1 — AWS Cloud Resources Terminated" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** Complete destruction successful" >> $GITHUB_STEP_SUMMARY
+          echo "- **Terminated Components:** Application Load Balancer, Target Groups, ECS Cluster, Security Groups, Subnets, VPC, ECR Registries, CloudWatch Logs" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cost Leakage:** Zero active billable cloud resources remain" >> $GITHUB_STEP_SUMMARY
+

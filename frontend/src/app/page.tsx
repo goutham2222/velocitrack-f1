@@ -32,6 +32,7 @@ import {
 export default function ReplayDashboard() {
   const [payload, setPayload] = useState<ReplayPayload | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [isPickerOpen, setIsPickerOpen] = useState<boolean>(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const [hasCustomSession, setHasCustomSession] = useState<boolean>(false);
@@ -115,8 +116,9 @@ export default function ReplayDashboard() {
   }, [payload?.metadata]);
 
   // Load saved session or demo on initial mount for instant zero-wait startup
-  useEffect(() => {
+  const loadInitialData = useCallback(() => {
     setIsLoading(true);
+    setInitialLoadError(null);
 
     const currentBuildId = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
     let savedBuildId = "";
@@ -172,29 +174,45 @@ export default function ReplayDashboard() {
         )
           .then((data) => {
             setPayload(data);
+            setInitialLoadError(null);
             setIsLoading(false);
           })
           .catch(() => {
             fetchDemoReplay(10, 2)
               .then((data) => {
                 setPayload(data);
+                setInitialLoadError(null);
                 setIsLoading(false);
               })
-              .catch(() => setIsLoading(false));
+              .catch((err) => {
+                console.error("Failed to load demo fallback:", err);
+                setInitialLoadError(
+                  "Could not connect to telemetry API. If this is a new cloud deployment, please wait 15-30s for the container service to warm up and click retry."
+                );
+                setIsLoading(false);
+              });
           });
       } else {
         fetchDemoReplay(10, 2)
           .then((data) => {
             setPayload(data);
+            setInitialLoadError(null);
             setIsLoading(false);
           })
           .catch((err) => {
             console.error("Failed to load initial demo replay:", err);
+            setInitialLoadError(
+              "Could not connect to telemetry API. If this is a new cloud deployment, please wait 15-30s for the container service to warm up and click retry."
+            );
             setIsLoading(false);
           });
       }
     });
   }, []);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
 
   const handleResetCamera = useCallback(() => {
     playback.setSelectedDriverCode(null);
@@ -456,6 +474,21 @@ export default function ReplayDashboard() {
             resetRotation2DTrigger={resetRotation2DTrigger}
             onRotation2DChange={setRotationDeg2D}
           />
+        ) : initialLoadError && !isLoading ? (
+          <div className="w-full h-full flex items-center justify-center flex-col gap-4 text-slate-300 font-mono text-sm px-6 text-center select-none">
+            <div className="w-12 h-12 rounded-full bg-red-950/50 border border-red-500/30 flex items-center justify-center text-red-400">
+              <RotateCw className="w-6 h-6" />
+            </div>
+            <div className="text-red-500 font-semibold tracking-wider text-base">TELEMETRY CONNECTION FAILED</div>
+            <div className="text-slate-400 text-xs max-w-md leading-relaxed">{initialLoadError}</div>
+            <button
+              onClick={() => loadInitialData()}
+              className="mt-2 px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded font-mono font-medium text-xs tracking-wider transition-colors shadow-lg shadow-red-900/30 flex items-center gap-2 cursor-pointer active:scale-95"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              RETRY CONNECTION
+            </button>
+          </div>
         ) : (
           <div className="w-full h-full flex items-center justify-center flex-col gap-3 text-slate-400 font-mono text-sm">
             <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
