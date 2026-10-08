@@ -371,7 +371,7 @@ To prevent recurring AWS billing when you are not actively using the application
 ##### Option B: Local CLI Teardown Script
 From your local terminal, run the automated teardown script:
 ```bash
-bash infra/scripts/destroy.sh
+bash infra/scripts/teardown.sh
 ```
 This script runs `terraform destroy -auto-approve` inside `infra/terraform/`, cleanly wiping:
 - Application Load Balancers & Target Groups

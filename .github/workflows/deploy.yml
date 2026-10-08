@@ -83,32 +83,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.0
-          terraform_wrapper: false
-
-      - name: Initialize Terraform & Sync Infrastructure
-        working-directory: infra/terraform
-        run: |
-          terraform init
-          terraform apply -auto-approve
-
       - name: Log in to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Resolve Infrastructure Endpoints
+        id: infra-endpoints
+        run: |
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          echo "ecr_backend=${REGISTRY}/velocitrack-f1-backend" >> $GITHUB_OUTPUT
+          echo "ecr_frontend=${REGISTRY}/velocitrack-f1-frontend" >> $GITHUB_OUTPUT
+          ALB_DNS=$(aws elbv2 describe-load-balancers --names velocitrack-f1-alb --region ${{ env.AWS_REGION }} --query "LoadBalancers[0].DNSName" --output text)
+          echo "alb_dns=${ALB_DNS}" >> $GITHUB_OUTPUT
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Extract ECR & Load Balancer Outputs
-        id: tf-outputs
-        working-directory: infra/terraform
-        run: |
-          echo "ecr_backend=$(terraform output -raw ecr_backend_url)" >> $GITHUB_OUTPUT
-          echo "ecr_frontend=$(terraform output -raw ecr_frontend_url)" >> $GITHUB_OUTPUT
-          echo "alb_dns=$(terraform output -raw alb_dns_name)" >> $GITHUB_OUTPUT
 
       - name: Build and Push Backend Container Image
         uses: docker/build-push-action@v6
@@ -117,7 +106,7 @@ jobs:
           file: ./backend/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.tf-outputs.outputs.ecr_backend }}:latest
+          tags: ${{ steps.infra-endpoints.outputs.ecr_backend }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -130,7 +119,7 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_API_URL=
-          tags: ${{ steps.tf-outputs.outputs.ecr_frontend }}:latest
+          tags: ${{ steps.infra-endpoints.outputs.ecr_frontend }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -154,7 +143,7 @@ jobs:
 
       - name: Execute Live Smoke Verification
         run: |
-          ALB_URL="http://${{ steps.tf-outputs.outputs.alb_dns }}"
+          ALB_URL="http://${{ steps.infra-endpoints.outputs.alb_dns }}"
           echo "Verifying live ALB endpoints at $ALB_URL..."
           
           # Root endpoint check
@@ -177,8 +166,8 @@ jobs:
       - name: Output Deployment Summary
         run: |
           echo "### 🏎️ VelociTrack F1 — Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **Live Application URL:** [http://${{ steps.tf-outputs.outputs.alb_dns }}](http://${{ steps.tf-outputs.outputs.alb_dns }})" >> $GITHUB_STEP_SUMMARY
-          echo "- **FastAPI Health Probe:** [http://${{ steps.tf-outputs.outputs.alb_dns }}/health](http://${{ steps.tf-outputs.outputs.alb_dns }}/health)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Live Application URL:** [http://${{ steps.infra-endpoints.outputs.alb_dns }}](http://${{ steps.infra-endpoints.outputs.alb_dns }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **FastAPI Health Probe:** [http://${{ steps.infra-endpoints.outputs.alb_dns }}/health](http://${{ steps.infra-endpoints.outputs.alb_dns }}/health)" >> $GITHUB_STEP_SUMMARY
           echo "- **AWS Region:** \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Compute Engine:** AWS ECS on AWS Fargate (Serverless \`linux/amd64\`)" >> $GITHUB_STEP_SUMMARY
 
