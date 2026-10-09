@@ -373,7 +373,28 @@ If you wish to deploy to AWS, configure the following secrets under **Settings >
 
 ---
 
-#### 4. Zero-Cost Teardown & Resource Termination Protocol ⚠️
+#### 4. How to Deploy to AWS
+
+Choose either automated deployment via GitHub Actions or local deployment via CLI:
+
+##### Option A: On-Demand Deployment via GitHub Actions (Recommended)
+1. Ensure `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are saved in GitHub Repository Secrets.
+2. Go to the **Actions** tab in your GitHub repository.
+3. Select **"VelociTrack F1 — Continuous Deployment to AWS ECS Fargate"** from the left sidebar.
+4. Click **"Run workflow"** and select the `main` branch.
+5. The pipeline automatically builds cross-compiled `linux/amd64` Docker images, pushes them to Amazon ECR, executes a zero-downtime rolling update on ECS Fargate, and displays the live Application Load Balancer URL in the deployment summary.
+
+##### Option B: Local CLI Deployment Script
+If deploying directly from your local terminal with AWS credentials configured:
+```bash
+# Run end-to-end infrastructure provisioning and container deployment
+bash infra/scripts/deploy.sh
+```
+This script initializes Terraform, provisions the VPC, ALB, and ECS Fargate cluster, cross-compiles and pushes Docker images to Amazon ECR, and prints the live ALB endpoint.
+
+---
+
+#### 5. Zero-Cost Teardown & Resource Termination Protocol ⚠️
 
 To prevent recurring AWS billing when you are not actively using the application, use either of the following teardown methods to destroy all cloud infrastructure:
 
