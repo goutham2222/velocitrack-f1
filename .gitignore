@@ -51,16 +51,9 @@ yarn-debug.log*
 yarn-error.log*
 *.log
 
-# Project workflow rules & debug log
-DEBUG_LOG.md
-.cursorrules
-
 # Terraform state & cache
 *.tfstate
 *.tfstate.*
 .terraform/
 .terraform.lock.hcl
 *.tfvars
-
-# Local deployment guides (do not push to remote)
-docs/AWS_Deployment_and_DevOps_Guide.md

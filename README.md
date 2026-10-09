@@ -131,6 +131,11 @@ flowchart TD
 
 ```
 velocitrack-f1/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                  # Automated CI for linting, type-checking, and compose validation
+│       ├── deploy.yml              # On-demand AWS ECS Fargate deployment pipeline
+│       └── teardown.yml            # 1-click cloud resource destruction with confirmation
 ├── backend/
 │   ├── app/
 │   │   ├── api/
@@ -172,25 +177,35 @@ velocitrack-f1/
 │   │   ├── hooks/
 │   │   │   └── usePlayback.ts      # 60 FPS rAF loop, Catmull-Rom spline, and gap calculations
 │   │   ├── services/
-│   │   │   └── api.ts              # Type-safe Fetch API client for backend communication
+│   │   │   └── api.ts              # Resilient Fetch API client with dynamic origin resolution
 │   │   └── types/
 │   │       └── telemetry.ts        # TypeScript data contracts matching backend Pydantic models
 │   ├── .dockerignore               # Build context exclusions (node_modules, .next)
-│   ├── next.config.mjs             # Next.js config with dynamic millisecond build ID injection
+│   ├── next.config.mjs             # Next.js standalone output and millisecond build ID injection
 │   ├── package.json                # Dependencies (@react-three/fiber, three, tailwindcss, lucide-react)
 │   ├── tailwind.config.ts          # Tailwind styling configuration
 │   ├── tsconfig.json               # TypeScript strict compiler configuration
-│   └── Dockerfile                  # Multi-stage container build for frontend
+│   └── Dockerfile                  # Optimized multi-stage standalone container build (~216MB)
+├── infra/
+│   ├── scripts/
+│   │   ├── deploy.sh               # Local full-stack automated AWS deployment script
+│   │   ├── build_and_push.sh       # Multi-stage Docker build and Amazon ECR push automation
+│   │   └── teardown.sh             # Zero-cost resource termination and audit script
+│   ├── terraform/
+│   │   ├── main.tf                 # IaC definition: VPC, Subnets, ALB, ECS Fargate, ECR, IAM
+│   │   ├── variables.tf            # Configurable inputs (region, app name, container specs)
+│   │   ├── outputs.tf              # Exported endpoints (ALB DNS, Target Group ARNs, ECR URLs)
+│   │   └── terraform.tfvars.example # Example variable overrides
+│   └── ec2-demo/
+│       ├── deploy-ec2.sh           # Alternative single-VM automated deployment script
+│       ├── teardown-ec2.sh         # EC2 instance and security group termination script
+│       └── user-data.sh            # Cloud-init bootstrap script for Docker & Compose
 ├── docker-compose.yml              # Local multi-container orchestration definition
 ├── docs/
-│   ├── assets/                     # Replay engine screenshots & UI preview captures
-│   ├── Doc_1_System_Architecture_and_Data_Pipelines.md
-│   ├── Doc_2_Codebase_Reference_and_Component_Catalog.md
-│   ├── Doc_3_Algorithms_State_Management_and_Math.md
-│   └── Doc_4_Testing_Failure_Modes_and_Troubleshooting.md
+│   └── assets/                     # Replay engine screenshots & UI preview captures
 ├── .env.example                    # Environment variable template
 ├── .gitignore                      # Git exclusion rules
-└── README.md                       # System documentation
+└── README.md                       # Master system documentation
 ```
 
 ---
