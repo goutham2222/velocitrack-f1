@@ -302,17 +302,17 @@ VelociTrack F1 includes a production-grade cloud deployment architecture provisi
 
 ```mermaid
 flowchart TD
-    CLIENT["Browser Client / User"] -->|HTTP Port 80| ALB["AWS Application Load Balancer"]
+    CLIENT["Browser Client / User"] -->|"HTTP Port 80"| ALB["AWS Application Load Balancer"]
     
     subgraph VPC ["AWS VPC (10.0.0.0/16)"]
         subgraph SUBNETS ["Public Subnets (us-east-1a, us-east-1b)"]
-            ALB -->|/api/* & /health (Port 8000)| TG_BACKEND["Target Group: Backend"]
-            ALB -->|/* Default (Port 3000)| TG_FRONTEND["Target Group: Frontend"]
+            ALB -->|"/api/* & /health (Port 8000)"| TG_BACKEND["Target Group: Backend"]
+            ALB -->|"/* Default (Port 3000)"| TG_FRONTEND["Target Group: Frontend"]
             
             subgraph ECS ["AWS ECS Fargate Cluster"]
                 TASK["Task: velocitrack-f1-task\n(1 vCPU / 2GB RAM)"]
-                TG_BACKEND -->|Proxy Port 8000| TASK
-                TG_FRONTEND -->|Proxy Port 3000| TASK
+                TG_BACKEND -->|"Proxy Port 8000"| TASK
+                TG_FRONTEND -->|"Proxy Port 3000"| TASK
                 
                 subgraph CONTAINERS ["Dual-Container awsvpc Task"]
                     BACKEND_C["FastAPI Backend Container\n(Python 3.11 / FastF1)"]
@@ -322,9 +322,9 @@ flowchart TD
         end
     end
     
-    ECR_B["Amazon ECR: Backend"] -.->|Image Pull| BACKEND_C
-    ECR_F["Amazon ECR: Frontend"] -.->|Image Pull| FRONTEND_C
-    TASK -.->|JSON Logs| CW["CloudWatch: /ecs/velocitrack-f1"]
+    ECR_B["Amazon ECR: Backend"] -.->|"Image Pull"| BACKEND_C
+    ECR_F["Amazon ECR: Frontend"] -.->|"Image Pull"| FRONTEND_C
+    TASK -.->|"JSON Logs"| CW["CloudWatch: /ecs/velocitrack-f1"]
 ```
 
 #### 2. Key Architecture Benefits
@@ -337,22 +337,23 @@ flowchart TD
 
 ---
 
-#### 3. Automated CI/CD Pipeline (GitHub Actions)
+#### 3. Decoupled CI/CD Workflows (GitHub Actions)
 
-The repository includes fully automated GitHub Actions workflows located in `.github/workflows/`:
+To support both **local open-source developers** and **cloud deployers**, CI/CD pipelines are strictly decoupled into independent workflows in `.github/workflows/`:
 
-| Workflow | Trigger | Description |
-| :--- | :--- | :--- |
-| **`deploy.yml`** | `push` to `main` / `deploy/aws-demo`, or manual trigger | Validates TypeScript & Python, provisions/verifies Terraform IaC, builds Docker images with layer caching, pushes to Amazon ECR, and executes a zero-downtime rolling update on ECS Fargate. |
-| **`teardown.yml`** | Manual `workflow_dispatch` only | Safely terminates all AWS cloud resources with `terraform destroy -auto-approve` to guarantee zero cost leakage. |
+| Workflow | Trigger | AWS Credentials Needed? | Description |
+| :--- | :--- | :---: | :--- |
+| **`ci.yml`** | `push` & `pull_request` on all branches | **No** (Zero AWS dependency) | Validates TypeScript, runs Next.js production build (`npm run build`), checks Python 3.11 syntax, and verifies Docker Compose configuration. Runs automatically on every commit. |
+| **`deploy.yml`** | Manual **"Run workflow"** (`workflow_dispatch`) or release tags `v*` | **Yes** (`AWS_ACCESS_KEY_ID`) | On-demand cloud release. Builds Docker images with layer caching, pushes to Amazon ECR, executes zero-downtime rolling update on ECS Fargate, and runs live ALB smoke tests. |
+| **`teardown.yml`** | Manual **"Run workflow"** (`workflow_dispatch`) with `DESTROY` confirmation | **Yes** (`AWS_ACCESS_KEY_ID`) | On-demand cloud resource destruction to guarantee zero cost leakage when demo or recording sessions conclude. |
 
-##### Required GitHub Repository Secrets
-To enable automated deployments, navigate to **Settings > Secrets and variables > Actions** in your GitHub repository and configure:
+##### Required GitHub Repository Secrets (For Cloud Deployers Only)
+If you wish to deploy to AWS, configure the following secrets under **Settings > Secrets and variables > Actions**:
 
-| Secret Name | Value | Required |
-| :--- | :--- | :--- |
-| `AWS_ACCESS_KEY_ID` | IAM User Access Key with ECS, ECR, ALB, and VPC permissions | **Yes** |
-| `AWS_SECRET_ACCESS_KEY` | IAM User Secret Access Key | **Yes** |
+| Secret Name | Value | Required for Local Dev? |
+| :--- | :--- | :---: |
+| `AWS_ACCESS_KEY_ID` | IAM User Access Key with ECS, ECR, ALB, and VPC permissions | **No** (Cloud only) |
+| `AWS_SECRET_ACCESS_KEY` | IAM User Secret Access Key | **No** (Cloud only) |
 | `AWS_REGION` | AWS Target Region (Default: `us-east-1`) | Optional |
 
 ---

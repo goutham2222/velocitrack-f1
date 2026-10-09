@@ -1,21 +1,19 @@
-name: VelociTrack F1 — Production CI/CD Deployment
+name: VelociTrack F1 — AWS ECS Production Deployment (On-Demand)
 
 on:
-  push:
-    branches:
-      - main
-      - deploy/aws-demo
-    paths-ignore:
-      - "docs/**"
-      - "*.md"
-      - ".gitignore"
   workflow_dispatch:
     inputs:
-      force_terraform_apply:
-        description: "Re-run full Terraform apply before deploying containers"
-        required: false
-        type: boolean
-        default: false
+      environment:
+        description: "Target AWS Deployment Environment"
+        required: true
+        type: choice
+        options:
+          - "production"
+          - "demo"
+        default: "production"
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: read

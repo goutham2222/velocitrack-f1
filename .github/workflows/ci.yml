@@ -1,0 +1,84 @@
+name: VelociTrack F1 — Continuous Integration (CI)
+
+on:
+  push:
+    branches:
+      - "**"
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - ".gitignore"
+  pull_request:
+    branches:
+      - "**"
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - ".gitignore"
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-validation:
+    name: 🎨 Frontend Typecheck & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Strict Next.js Production Build Validation
+        working-directory: frontend
+        run: npm run build
+
+  backend-validation:
+    name: 🏎️ Backend Syntax & Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Backend Dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Syntax & Schema Compilation Check
+        working-directory: backend
+        run: |
+          python -m py_compile \
+            app/main.py \
+            app/models/schemas.py \
+            app/services/fastf1_client.py \
+            app/services/interpolator.py \
+            app/services/demo_data.py
+
+  compose-validation:
+    name: 🐳 Docker Compose Schema Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose config --quiet
+
