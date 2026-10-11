@@ -81,18 +81,56 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+          terraform_wrapper: false
+
+      - name: Configure Remote Terraform State (S3)
+        id: tf-state
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+          STATE_BUCKET="velocitrack-f1-tfstate-${ACCOUNT_ID}-${{ env.AWS_REGION }}"
+          echo "state_bucket=${STATE_BUCKET}" >> $GITHUB_OUTPUT
+
+          echo "Checking Terraform S3 state bucket: ${STATE_BUCKET}..."
+          if ! aws s3api head-bucket --bucket "${STATE_BUCKET}" 2>/dev/null; then
+            echo "State bucket does not exist. Creating ${STATE_BUCKET}..."
+            if [ "${{ env.AWS_REGION }}" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket "${STATE_BUCKET}" --region "${{ env.AWS_REGION }}"
+            else
+              aws s3api create-bucket --bucket "${STATE_BUCKET}" --region "${{ env.AWS_REGION }}" \
+                --create-bucket-configuration LocationConstraint="${{ env.AWS_REGION }}"
+            fi
+            aws s3api put-bucket-versioning --bucket "${STATE_BUCKET}" --versioning-configuration Status=Enabled
+            aws s3api put-public-access-block --bucket "${STATE_BUCKET}" \
+              --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+          fi
+
+          printf 'terraform {\n  backend "s3" {\n    bucket = "%s"\n    key    = "terraform.tfstate"\n    region = "%s"\n  }\n}\n' "${STATE_BUCKET}" "${{ env.AWS_REGION }}" > infra/terraform/backend.tf
+          echo "✅ Remote S3 backend configuration generated."
+
+      - name: Terraform Init & ECR Bootstrap
+        working-directory: infra/terraform
+        run: |
+          terraform init -upgrade
+          echo "Bootstrapping ECR repositories to receive Docker images..."
+          terraform apply \
+            -target=aws_ecr_repository.backend \
+            -target=aws_ecr_repository.frontend \
+            -auto-approve
+
       - name: Log in to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Resolve Infrastructure Endpoints
-        id: infra-endpoints
+      - name: Resolve ECR Endpoints
+        id: ecr-endpoints
         run: |
           REGISTRY="${{ steps.login-ecr.outputs.registry }}"
           echo "ecr_backend=${REGISTRY}/velocitrack-f1-backend" >> $GITHUB_OUTPUT
           echo "ecr_frontend=${REGISTRY}/velocitrack-f1-frontend" >> $GITHUB_OUTPUT
-          ALB_DNS=$(aws elbv2 describe-load-balancers --names velocitrack-f1-alb --region ${{ env.AWS_REGION }} --query "LoadBalancers[0].DNSName" --output text)
-          echo "alb_dns=${ALB_DNS}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -104,7 +142,7 @@ jobs:
           file: ./backend/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.infra-endpoints.outputs.ecr_backend }}:latest
+          tags: ${{ steps.ecr-endpoints.outputs.ecr_backend }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -117,9 +155,18 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_API_URL=
-          tags: ${{ steps.infra-endpoints.outputs.ecr_frontend }}:latest
+          tags: ${{ steps.ecr-endpoints.outputs.ecr_frontend }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Terraform Full Infrastructure Apply
+        id: tf-apply
+        working-directory: infra/terraform
+        run: |
+          echo "Applying full Terraform infrastructure (VPC, Subnets, ALB, ECS)..."
+          terraform apply -auto-approve
+          ALB_DNS=$(terraform output -raw alb_dns_name)
+          echo "alb_dns=${ALB_DNS}" >> $GITHUB_OUTPUT
 
       - name: Trigger Rolling ECS Service Deployment
         run: |
@@ -130,18 +177,35 @@ jobs:
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
 
-      - name: Wait for ECS Service Steady State
+      - name: Wait for ECS Service Steady State & Health Probes
         run: |
-          echo "Waiting for new containers to pass ALB health checks..."
-          aws ecs wait services-stable \
-            --cluster velocitrack-f1-cluster \
-            --services velocitrack-f1-service \
-            --region ${{ env.AWS_REGION }}
-          echo "✅ ECS service reached steady state!"
+          ALB_URL="http://${{ steps.tf-apply.outputs.alb_dns }}"
+          echo "Awaiting ALB Target Group and Container health checks at ${ALB_URL}/health..."
+          MAX_ATTEMPTS=30
+          ATTEMPT=1
+          IS_HEALTHY=false
+
+          while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
+            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${ALB_URL}/health" || echo "000")
+            if [ "$STATUS_CODE" -eq 200 ]; then
+              IS_HEALTHY=true
+              echo "✅ Health probe passed with HTTP 200 on attempt ${ATTEMPT}!"
+              break
+            fi
+            echo "Attempt ${ATTEMPT}/${MAX_ATTEMPTS}: Health probe returned HTTP ${STATUS_CODE}. Retrying in 10s..."
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          if [ "$IS_HEALTHY" != true ]; then
+            echo "❌ Health check timed out after 300s. Inspecting ECS service events..."
+            aws ecs describe-services --cluster velocitrack-f1-cluster --services velocitrack-f1-service --region ${{ env.AWS_REGION }} --query "services[0].events[0:5]"
+            exit 1
+          fi
 
       - name: Execute Live Smoke Verification
         run: |
-          ALB_URL="http://${{ steps.infra-endpoints.outputs.alb_dns }}"
+          ALB_URL="http://${{ steps.tf-apply.outputs.alb_dns }}"
           echo "Verifying live ALB endpoints at $ALB_URL..."
           
           # Root endpoint check
@@ -164,8 +228,9 @@ jobs:
       - name: Output Deployment Summary
         run: |
           echo "### 🏎️ VelociTrack F1 — Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **Live Application URL:** [http://${{ steps.infra-endpoints.outputs.alb_dns }}](http://${{ steps.infra-endpoints.outputs.alb_dns }})" >> $GITHUB_STEP_SUMMARY
-          echo "- **FastAPI Health Probe:** [http://${{ steps.infra-endpoints.outputs.alb_dns }}/health](http://${{ steps.infra-endpoints.outputs.alb_dns }}/health)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Live Application URL:** [http://${{ steps.tf-apply.outputs.alb_dns }}](http://${{ steps.tf-apply.outputs.alb_dns }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **FastAPI Health Probe:** [http://${{ steps.tf-apply.outputs.alb_dns }}/health](http://${{ steps.tf-apply.outputs.alb_dns }}/health)" >> $GITHUB_STEP_SUMMARY
           echo "- **AWS Region:** \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Compute Engine:** AWS ECS on AWS Fargate (Serverless \`linux/amd64\`)" >> $GITHUB_STEP_SUMMARY
+
 

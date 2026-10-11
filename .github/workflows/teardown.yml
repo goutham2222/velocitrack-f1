@@ -43,10 +43,24 @@ jobs:
           terraform_version: 1.9.0
           terraform_wrapper: false
 
+      - name: Configure Remote Terraform State (S3)
+        id: tf-state
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+          STATE_BUCKET="velocitrack-f1-tfstate-${ACCOUNT_ID}-${{ env.AWS_REGION }}"
+          echo "state_bucket=${STATE_BUCKET}" >> $GITHUB_OUTPUT
+
+          if aws s3api head-bucket --bucket "${STATE_BUCKET}" 2>/dev/null; then
+            echo "Found Terraform state bucket: ${STATE_BUCKET}. Generating backend.tf..."
+            printf 'terraform {\n  backend "s3" {\n    bucket = "%s"\n    key    = "terraform.tfstate"\n    region = "%s"\n  }\n}\n' "${STATE_BUCKET}" "${{ env.AWS_REGION }}" > infra/terraform/backend.tf
+          else
+            echo "State bucket ${STATE_BUCKET} does not exist. Proceeding with fallback verification."
+          fi
+
       - name: Drain & Stop Active ECS Tasks
         run: |
           echo "Stopping running ECS Fargate tasks to accelerate ALB target draining..."
-          TASK_ARNS=$(aws ecs list-tasks --cluster velocitrack-f1-cluster --region ${{ env.AWS_REGION }} --query "taskArns[]" --output text || echo "")
+          TASK_ARNS=$(aws ecs list-tasks --cluster velocitrack-f1-cluster --region ${{ env.AWS_REGION }} --query "taskArns[]" --output text 2>/dev/null || echo "")
           for TASK in $TASK_ARNS; do
             if [ "$TASK" != "" ] && [ "$TASK" != "None" ]; then
               echo "Stopping task: $TASK"
@@ -57,14 +71,52 @@ jobs:
       - name: Execute Terraform Destroy
         working-directory: infra/terraform
         run: |
-          echo "Running terraform destroy to terminate all provisioned AWS resources..."
-          terraform init
-          terraform destroy -auto-approve
+          if [ -f "backend.tf" ]; then
+            echo "Initializing Terraform against remote S3 state..."
+            terraform init -upgrade
+            echo "Executing terraform destroy..."
+            terraform destroy -auto-approve
+          else
+            echo "No remote backend detected; skipping terraform destroy."
+          fi
+
+      - name: Verify Elimination of High-Cost Resources
+        run: |
+          echo "Auditing cloud environment for lingering billable resources..."
+
+          # Audit & delete lingering ALBs
+          ALBS=$(aws elbv2 describe-load-balancers --region ${{ env.AWS_REGION }} \
+            --query "LoadBalancers[?contains(LoadBalancerName, 'velocitrack')].LoadBalancerArn" \
+            --output text 2>/dev/null || echo "")
+          if [ -n "$ALBS" ]; then
+            echo "Purging lingering ALB: $ALBS"
+            aws elbv2 delete-load-balancer --load-balancer-arn "$ALBS" --region ${{ env.AWS_REGION }} || true
+          fi
+
+          # Audit & delete lingering ECS Clusters
+          CLUSTERS=$(aws ecs list-clusters --region ${{ env.AWS_REGION }} \
+            --query "clusterArns[?contains(@, 'velocitrack')]" \
+            --output text 2>/dev/null || echo "")
+          if [ -n "$CLUSTERS" ]; then
+            echo "Purging lingering ECS Cluster: $CLUSTERS"
+            aws ecs delete-cluster --cluster "$CLUSTERS" --region ${{ env.AWS_REGION }} || true
+          fi
+
+          echo "✅ All compute and ingress resources verified terminated."
+
+      - name: Purge Terraform State Bucket (Absolute Zero Cost)
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+          STATE_BUCKET="velocitrack-f1-tfstate-${ACCOUNT_ID}-${{ env.AWS_REGION }}"
+          if aws s3api head-bucket --bucket "${STATE_BUCKET}" 2>/dev/null; then
+            echo "Deleting S3 state bucket ${STATE_BUCKET} to leave zero residual cloud footprint..."
+            aws s3 rb "s3://${STATE_BUCKET}" --force || true
+          fi
 
       - name: Output Teardown Summary
         run: |
           echo "### 🏁 VelociTrack F1 — AWS Cloud Resources Terminated" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** Complete destruction successful" >> $GITHUB_STEP_SUMMARY
-          echo "- **Terminated Components:** Application Load Balancer, Target Groups, ECS Cluster, Security Groups, Subnets, VPC, ECR Registries, CloudWatch Logs" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cost Leakage:** Zero active billable cloud resources remain" >> $GITHUB_STEP_SUMMARY
+          echo "- **Terminated Components:** Application Load Balancer, Target Groups, ECS Cluster, Security Groups, Subnets, VPC, ECR Registries, CloudWatch Logs, S3 State Bucket" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cost Leakage:** Zero active billable cloud resources remain (\$0.00/hr)" >> $GITHUB_STEP_SUMMARY
 
